@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { getSupabase, SYNC_KEYS } from "@/lib/supabase";
+import type { User } from "@supabase/supabase-js";
 
 // ===== 聲效系統：Cyber-Metallic / Sharp Digital (SFX Specification) =====
 let audioCtx: AudioContext | null = null;
@@ -1540,6 +1542,8 @@ export default function Home() {
   const [expRange, setExpRange]   = useState<"7"|"14"|"30">("14");
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [loaded, setLoaded]       = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"pending" | "local" | "synced">("pending");
+  const [user, setUser]           = useState<User | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTimer, setActiveTimer] = useState<typeof QUESTS[0] | null>(null);
   const [aiQuests, setAiQuests] = useState<Quest[]>([]);
@@ -1674,7 +1678,53 @@ export default function Home() {
     a.play().then(() => setIsPlaying(true)).catch(() => {});
   }, []);
 
+  // Auth + cloud sync: resolve session and optionally hydrate from Supabase before init
+  const hasInitializedRef = useRef(false);
   useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      setSyncStatus("local");
+      return;
+    }
+    const resolve = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      if (!session) {
+        setSyncStatus("local");
+        return;
+      }
+      setSyncStatus("pending");
+      try {
+        const { data: rows } = await supabase.from("user_state").select("key, value").eq("user_id", session.user.id);
+        if (rows?.length) {
+          for (const row of rows) {
+            const key = row.key as string;
+            const val = row.value;
+            if (typeof key === "string" && val !== undefined) {
+              try {
+                if (key === "slq_voice_enabled") localStorage.setItem(key, String(val));
+                else localStorage.setItem(key, JSON.stringify(val));
+              } catch {}
+            }
+          }
+        }
+      } catch {
+        // keep local data
+      }
+      setSyncStatus("synced");
+    };
+    resolve();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (!session) setSyncStatus("local");
+      else resolve();
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (syncStatus === "pending" || hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
     const today = getToday();
     const yesterday = getYesterday();
     const saved = localStorage.getItem("slq_v2");
@@ -1736,7 +1786,7 @@ export default function Home() {
       }
     }
     setLoaded(true);
-  }, []);
+  }, [syncStatus]);
 
   useEffect(() => {
     if (!emergencyDismissedForToday) return;
@@ -1786,6 +1836,23 @@ export default function Home() {
     localStorage.setItem("slq_v2", JSON.stringify({
       totalExp: newTotal, completed, debuffs, lastReset: today, streak: newStreak, bossExpToday,
     }));
+    const sb = getSupabase();
+    if (user && sb) {
+      (async () => {
+        try {
+          for (const key of SYNC_KEYS) {
+            const raw = localStorage.getItem(key);
+            const value = key === "slq_voice_enabled" ? (raw === "true") : (raw ? JSON.parse(raw) : null);
+            if (value !== null && value !== undefined) {
+              await sb.from("user_state").upsert(
+                { user_id: user.id, key, value, updated_at: new Date().toISOString() },
+                { onConflict: "user_id,key" }
+              );
+            }
+          }
+        } catch {}
+      })();
+    }
     const meta = getMeta();
     setMeta({ ...meta, weekHistory: { ...(meta.weekHistory ?? {}), [today]: todayGain } });
     // Shadow Extraction: streak hits multiple of 7
@@ -1797,7 +1864,30 @@ export default function Home() {
       sound.playSuccess();
       setTimeout(() => setShowArise(false), 3500);
     }
-  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenQuest]);
+  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenQuest, user]);
+
+  // Periodic sync to Supabase when logged in (catches meta, history, boss, achievements, voice)
+  useEffect(() => {
+    if (!loaded || !user) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    const sync = async () => {
+      try {
+        for (const key of SYNC_KEYS) {
+          const raw = localStorage.getItem(key);
+          const value = key === "slq_voice_enabled" ? (raw === "true") : (raw ? JSON.parse(raw) : null);
+          if (value !== null && value !== undefined) {
+            await sb.from("user_state").upsert(
+              { user_id: user.id, key, value, updated_at: new Date().toISOString() },
+              { onConflict: "user_id,key" }
+            );
+          }
+        }
+      } catch {}
+    };
+    const id = setInterval(sync, 5000);
+    return () => clearInterval(id);
+  }, [loaded, user]);
 
   // 依照目前狀態，每次載入 / 狀態變化時重新計算 AI 建議任務
   const prevAiLen = useRef(0);
@@ -2049,6 +2139,58 @@ export default function Home() {
           background:"linear-gradient(180deg, rgba(120,0,0,0.2) 0%, transparent 50%)",borderBottom:"3px solid rgba(200,50,50,0.5)"}}/>
       )}
       <BackgroundLayers />
+
+      <div style={{ position: "fixed", top: "var(--space-lg)", right: "var(--space-lg)", zIndex: 90, display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "0.7rem" }}>
+        {user ? (
+          <>
+            <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis" }}>{user.email ?? user.id.slice(0, 8)}</span>
+            <button
+              type="button"
+              onClick={async () => { await getSupabase()?.auth.signOut(); }}
+              style={{
+                padding: "6px 12px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", color: "var(--text-muted)",
+                borderRadius: "4px", cursor: "pointer", letterSpacing: "1px",
+              }}
+            >
+              Sign out
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={async () => {
+                const sb = getSupabase();
+                if (!sb) { window.alert("雲端同步未設定：請在 Vercel 的 Environment Variables 加入 NEXT_PUBLIC_SUPABASE_URL 與 NEXT_PUBLIC_SUPABASE_ANON_KEY，並重新部署。"); return; }
+                await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined } });
+              }}
+              style={{
+                padding: "6px 12px", border: "1px solid var(--accent-blue)", background: "rgba(58,122,212,0.2)", color: "var(--accent-blue)",
+                borderRadius: "4px", cursor: "pointer", letterSpacing: "1px",
+              }}
+            >
+              Sign in (Google)
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const sb = getSupabase();
+                if (!sb) { window.alert("雲端同步未設定：請在 Vercel 的 Environment Variables 加入 NEXT_PUBLIC_SUPABASE_URL 與 NEXT_PUBLIC_SUPABASE_ANON_KEY，並重新部署。"); return; }
+                const email = window.prompt("Email for magic link");
+                if (!email) return;
+                await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined } });
+                window.alert("Check your email for the sign-in link.");
+              }}
+              style={{
+                padding: "6px 12px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", color: "var(--text-muted)",
+                borderRadius: "4px", cursor: "pointer", letterSpacing: "1px",
+              }}
+            >
+              Sign in (Email)
+            </button>
+          </>
+        )}
+      </div>
 
       {commandAccepted && (
         <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:108,pointerEvents:"none",
