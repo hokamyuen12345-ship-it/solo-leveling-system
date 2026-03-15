@@ -2140,23 +2140,27 @@ export default function Home() {
       )}
       <BackgroundLayers />
 
-      <div style={{ position: "fixed", top: "var(--space-lg)", right: "var(--space-lg)", zIndex: 90, display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "0.7rem" }}>
+      <div style={{
+        position: "fixed", top: "var(--space-lg)", right: "var(--space-lg)", zIndex: 300,
+        display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "0.7rem",
+        background: "rgba(8,8,18,0.92)", padding: "8px 12px", borderRadius: "8px",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)",
+      }}>
         {user ? (
           <>
-            <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis" }}>{user.email ?? user.id.slice(0, 8)}</span>
+            <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1 }} title={user.email ?? undefined}>{user.email ?? user.id.slice(0, 8)}</span>
             <button
               type="button"
               onClick={async () => { await getSupabase()?.auth.signOut(); }}
               style={{
-                padding: "6px 12px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", color: "var(--text-muted)",
-                borderRadius: "4px", cursor: "pointer", letterSpacing: "1px",
+                padding: "6px 12px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.08)", color: "var(--text-muted)",
+                borderRadius: "6px", cursor: "pointer", letterSpacing: "1px", flexShrink: 0,
               }}
             >
               Sign out
             </button>
           </>
-        ) : (
-          <>
+          ) : (
             <button
               type="button"
               onClick={async () => {
@@ -2165,30 +2169,12 @@ export default function Home() {
                 await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined } });
               }}
               style={{
-                padding: "6px 12px", border: "1px solid var(--accent-blue)", background: "rgba(58,122,212,0.2)", color: "var(--accent-blue)",
-                borderRadius: "4px", cursor: "pointer", letterSpacing: "1px",
+                padding: "6px 12px", border: "1px solid var(--accent-blue)", background: "rgba(58,122,212,0.25)", color: "var(--accent-blue)",
+                borderRadius: "6px", cursor: "pointer", letterSpacing: "1px",
               }}
             >
-              Sign in (Google)
+              Sign in with Google
             </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const sb = getSupabase();
-                if (!sb) { window.alert("雲端同步未設定：請在 Vercel 的 Environment Variables 加入 NEXT_PUBLIC_SUPABASE_URL 與 NEXT_PUBLIC_SUPABASE_ANON_KEY，並重新部署。"); return; }
-                const email = window.prompt("Email for magic link");
-                if (!email) return;
-                await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined } });
-                window.alert("Check your email for the sign-in link.");
-              }}
-              style={{
-                padding: "6px 12px", border: "1px solid var(--border)", background: "rgba(0,0,0,0.4)", color: "var(--text-muted)",
-                borderRadius: "4px", cursor: "pointer", letterSpacing: "1px",
-              }}
-            >
-              Sign in (Email)
-            </button>
-          </>
         )}
       </div>
 
