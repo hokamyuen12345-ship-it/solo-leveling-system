@@ -1,26 +1,34 @@
 @import "tailwindcss";
+@import "./solo-leveling-tokens.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: var(--bg-primary);
+  --foreground: var(--text-primary);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+/* System messages: Orbitron for SYSTEM ALERT, LEVEL UP, MISSION COMPLETE */
+.font-system {
+  font-family: var(--font-system);
+}
+
+.font-ui {
+  font-family: var(--font-ui);
+}
+
+/* Tech / esports numbers (level, EXP, streak, debuff) */
+.font-mono-num {
+  font-family: var(--font-mono-num);
 }

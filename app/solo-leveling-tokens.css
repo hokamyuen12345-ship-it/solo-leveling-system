@@ -1,0 +1,127 @@
+/**
+ * SOLO LEVELING UI DESIGN SYSTEM
+ * Design tokens for RPG System Interface + Sci-Fi HUD
+ * Dark Futuristic · Energy Glow · Holographic System · Hunter Interface
+ */
+
+:root {
+  /* ========== 1. Primary Background ========== */
+  --bg-primary: #050816;
+  --bg-secondary: #0B1126;
+  --bg-panel: #101935;
+  --bg-card: #141F3E;
+
+  /* ========== 2. Border ========== */
+  --border-subtle: #1B2A52;
+  --border-active: #2E4DA7;
+  --border-glow: #3F8CFF;
+
+  /* ========== 3. Core Accent - System Blue ========== */
+  --accent-blue: #3F8CFF;
+  --accent-blue-glow: #5AA4FF;
+  --accent-blue-soft: #2C5DC8;
+
+  /* ========== 4. System Gold (EXP / Reward) ========== */
+  --accent-gold: #FFD166;
+  --accent-gold-glow: #FFE08A;
+  --accent-gold-dark: #D8A93F;
+
+  /* ========== 5. Elite Purple (Challenge) ========== */
+  --accent-purple: #9C6BFF;
+  --accent-purple-glow: #B58CFF;
+  --accent-purple-dark: #6F46C9;
+
+  /* ========== 6. Boss Red ========== */
+  --accent-red: #FF4D4F;
+  --accent-red-glow: #FF6B6E;
+  --accent-red-dark: #C83A3D;
+
+  /* ========== 7. Emergency Orange ========== */
+  --accent-orange: #FF9F43;
+  --accent-orange-glow: #FFB066;
+
+  /* ========== 8. Hidden / Teal ========== */
+  --accent-teal: #00C2B3;
+  --accent-teal-glow: #33D4C6;
+
+  /* ========== 9. Debuff ========== */
+  --debuff-bg: #2B0F12;
+  --debuff-border: #7A1F25;
+  --debuff-text: #FF6B6B;
+
+  /* ========== 10. Rank Colors ========== */
+  --rank-e: #6C757D;
+  --rank-e-glow: rgba(108, 117, 125, 0.35);
+  --rank-d: #3F8CFF;
+  --rank-d-glow: rgba(63, 140, 255, 0.4);
+  --rank-c: #00C2FF;
+  --rank-c-glow: rgba(0, 194, 255, 0.4);
+  --rank-b: #9C6BFF;
+  --rank-b-glow: rgba(156, 107, 255, 0.4);
+  --rank-a: #FF9F43;
+  --rank-a-glow: rgba(255, 159, 67, 0.4);
+  --rank-s: #FFD700;
+  --rank-s-glow: rgba(255, 215, 0, 0.5);
+
+  /* ========== 11. Quest Type (semantic) ========== */
+  --quest-daily: var(--accent-blue);
+  --quest-daily-glow: rgba(63, 140, 255, 0.5);
+  --quest-challenge: var(--accent-purple);
+  --quest-challenge-glow: rgba(156, 107, 255, 0.5);
+  --quest-ai: var(--accent-gold);
+  --quest-ai-glow: rgba(255, 209, 102, 0.5);
+  --quest-boss: var(--accent-red);
+  --quest-boss-glow: rgba(255, 77, 79, 0.5);
+  --quest-emergency: var(--accent-orange);
+  --quest-emergency-glow: rgba(255, 159, 67, 0.5);
+  --quest-hidden: var(--accent-teal);
+  --quest-hidden-glow: rgba(0, 194, 179, 0.5);
+
+  /* ========== 12. Glow (box-shadow helpers) ========== */
+  --glow-card: 0 0 10px rgba(63, 140, 255, 0.3);
+  --glow-gold: 0 0 15px rgba(255, 209, 102, 0.4);
+  --glow-boss: 0 0 20px rgba(255, 77, 79, 0.5);
+  --glow-purple: 0 0 15px rgba(156, 107, 255, 0.4);
+  --glow-orange: 0 0 12px rgba(255, 159, 67, 0.4);
+
+  /* ========== 13. Text ========== */
+  --text-primary: #E2E8F0;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --text-success: var(--accent-gold);
+  --text-danger: var(--debuff-text);
+  --text-info: var(--accent-blue);
+
+  /* ========== 14. Spacing ========== */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 48px;
+
+  /* ========== 15. Border Radius ========== */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* ========== 16. Card ========== */
+  --card-padding: 20px;
+  --card-gap: 12px;
+  --card-border: 1px solid var(--border-subtle);
+  --card-radius: 16px;
+
+  /* ========== 17. Animation ========== */
+  --anim-fast: 150ms;
+  --anim-normal: 300ms;
+  --anim-slow: 600ms;
+  --exp-fly-duration: 800ms;
+
+  /* ========== 18. Typography ========== */
+  /* Next.js font variables (--font-orbitron, --font-inter) are set on <html> */
+  --font-system: var(--font-orbitron, "Orbitron"), "Rajdhani", system-ui, sans-serif;
+  --font-ui: var(--font-inter, "Inter"), "Rajdhani", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Courier New", monospace;
+  --font-mono-num: var(--font-jetbrains-mono, "JetBrains Mono"), "SF Mono", monospace;
+}
