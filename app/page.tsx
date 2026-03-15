@@ -2138,12 +2138,12 @@ export default function Home() {
       )}
       <BackgroundLayers />
 
-      {/* 右上角登入/登出：掛到 body 下用 JS 建立的固定錨點 (#auth-fixed-anchor)，確保永遠釘在視窗右上角 */}
-      {authPortalReady && authAnchorRef.current && createPortal(
+      {/* 右上角登入/登出：計時畫面時隱藏避免擋到；其餘時候釘在視窗最上方右邊 */}
+      {authPortalReady && authAnchorRef.current && !activeTimer && createPortal(
         <div style={{
           display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "clamp(0.65rem, 2.2vw, 0.75rem)",
           background: "rgba(0,0,0,0.45)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-          padding: "12px 16px", margin: "12px", borderRadius: "8px",
+          padding: "10px 14px", margin: "8px", borderRadius: "8px",
           boxShadow: "0 2px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)",
           border: "1px solid rgba(255,255,255,0.1)",
         }}>
