@@ -2140,20 +2140,23 @@ export default function Home() {
       )}
       <BackgroundLayers />
 
+      {/* 右上角登入/登出：固定於視窗右上角、半透明，手機與電腦一致 */}
       <div style={{
-        position: "fixed", top: "var(--space-lg)", right: "var(--space-lg)", zIndex: 300,
-        display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "0.7rem",
-        background: "rgba(8,8,18,0.92)", padding: "8px 12px", borderRadius: "8px",
-        boxShadow: "0 2px 12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)",
+        position: "fixed", top: "12px", right: "12px", zIndex: 300,
+        display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "clamp(0.65rem, 2.2vw, 0.75rem)",
+        background: "rgba(0,0,0,0.45)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+        padding: "8px 12px", borderRadius: "8px",
+        boxShadow: "0 2px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)",
+        border: "1px solid rgba(255,255,255,0.1)",
       }}>
         {user ? (
           <>
-            <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1 }} title={user.email ?? undefined}>{user.email ?? user.id.slice(0, 8)}</span>
+            <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1 }} title={user.email ?? undefined}>{user.email ?? user.id.slice(0, 8)}</span>
             <button
               type="button"
               onClick={async () => { await getSupabase()?.auth.signOut(); }}
               style={{
-                padding: "6px 12px", border: "1px solid var(--border)", background: "rgba(255,255,255,0.08)", color: "var(--text-muted)",
+                padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", color: "var(--text-muted)",
                 borderRadius: "6px", cursor: "pointer", letterSpacing: "1px", flexShrink: 0,
               }}
             >
@@ -2169,7 +2172,7 @@ export default function Home() {
                 await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined } });
               }}
               style={{
-                padding: "6px 12px", border: "1px solid var(--accent-blue)", background: "rgba(58,122,212,0.25)", color: "var(--accent-blue)",
+                padding: "6px 12px", border: "1px solid rgba(58,122,212,0.5)", background: "rgba(58,122,212,0.2)", color: "var(--accent-blue)",
                 borderRadius: "6px", cursor: "pointer", letterSpacing: "1px",
               }}
             >
