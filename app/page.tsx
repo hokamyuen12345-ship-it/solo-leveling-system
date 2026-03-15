@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import { getSupabase, SYNC_KEYS } from "@/lib/supabase";
@@ -1154,9 +1155,8 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
   const [showStartFlash, setShowStartFlash] = useState(false);
   const [ripple, setRipple] = useState<{ id: number; x: number; y: number; target: string } | null>(null);
   const savedRef  = useRef<number>(quest.minutes * 60);
-  const startRef  = useRef<number>(0);
+  const endTimeRef = useRef<number>(0);
   const rafRef    = useRef<number>(0);
-  const visibleAt = useRef<number>(0);
   const lastMinuteTick = useRef<number>(-1);
   const lastCountdownSec = useRef<number>(-1);
   const tenSecondsSpoken = useRef(false);
@@ -1192,36 +1192,18 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
     if (remaining > 10) lastCountdownSec.current = -1;
   }, [running, remaining]);
 
-  useEffect(() => {
-    const onVis = () => {
-      if (document.hidden) {
-        visibleAt.current = Date.now();
-      } else {
-        if (running && visibleAt.current > 0) {
-          const elapsed = Math.floor((Date.now() - visibleAt.current) / 1000);
-          savedRef.current = Math.max(0, savedRef.current - elapsed);
-          setRemaining(savedRef.current);
-          visibleAt.current = 0;
-        }
-      }
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [running]);
-
+  // 用「結束時間戳」計算剩餘時間，離開分頁／關螢幕後再回來仍會顯示正確倒數並在到點時完成
   useEffect(() => {
     if (!running) { cancelAnimationFrame(rafRef.current); return; }
-    startRef.current = performance.now();
     const tick = () => {
-      const elapsed = Math.floor((performance.now() - startRef.current) / 1000);
-      const left = Math.max(0, savedRef.current - elapsed);
+      const left = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
       setRemaining(left);
       if (left <= 0) { onTimeExpired?.(); setFinished(true); setRunning(false); return; }
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [running]);
+  }, [running, onTimeExpired]);
 
   const pct = totalSecs > 0 ? ((totalSecs - remaining) / totalSecs) * 100 : 100;
   const mins = Math.floor(remaining / 60);
@@ -1232,6 +1214,7 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
     setShowStartFlash(true);
     setTimeout(() => setShowStartFlash(false), 450);
     savedRef.current = remaining;
+    endTimeRef.current = Date.now() + remaining * 1000;
     setRunning(true);
   }
   function handlePause() { savedRef.current = remaining; setRunning(false); }
@@ -1555,6 +1538,8 @@ export default function Home() {
   const [emergencyActive, setEmergencyActive] = useState(false);
   const [emergencyDismissedForToday, setEmergencyDismissedForToday] = useState(false);
   const [bootComplete, setBootComplete] = useState(false);
+  const [authPortalReady, setAuthPortalReady] = useState(false);
+  const authAnchorRef = useRef<HTMLDivElement | null>(null);
   const [showRankUp, setShowRankUp] = useState(false);
   const [prevRank, setPrevRank] = useState<string | null>(null);
   const [systemAlert, setSystemAlert] = useState<{ id: string; title: string; message: string } | null>(null);
@@ -1676,6 +1661,19 @@ export default function Home() {
     if (!a) return;
     a.volume = 0.25;
     a.play().then(() => setIsPlaying(true)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const el = document.createElement("div");
+    el.id = "auth-fixed-anchor";
+    el.style.cssText = "position:fixed !important; top:0 !important; right:0 !important; left:auto !important; bottom:auto !important; z-index:9999 !important; transform:none !important; pointer-events:auto;";
+    document.body.appendChild(el);
+    authAnchorRef.current = el;
+    setAuthPortalReady(true);
+    return () => {
+      if (authAnchorRef.current && authAnchorRef.current.parentNode) authAnchorRef.current.parentNode.removeChild(authAnchorRef.current);
+      authAnchorRef.current = null;
+    };
   }, []);
 
   // Auth + cloud sync: resolve session and optionally hydrate from Supabase before init
@@ -2140,29 +2138,29 @@ export default function Home() {
       )}
       <BackgroundLayers />
 
-      {/* 右上角登入/登出：固定於視窗右上角、半透明，手機與電腦一致 */}
-      <div style={{
-        position: "fixed", top: "12px", right: "12px", zIndex: 300,
-        display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "clamp(0.65rem, 2.2vw, 0.75rem)",
-        background: "rgba(0,0,0,0.45)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-        padding: "8px 12px", borderRadius: "8px",
-        boxShadow: "0 2px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)",
-        border: "1px solid rgba(255,255,255,0.1)",
-      }}>
-        {user ? (
-          <>
-            <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1 }} title={user.email ?? undefined}>{user.email ?? user.id.slice(0, 8)}</span>
-            <button
-              type="button"
-              onClick={async () => { await getSupabase()?.auth.signOut(); }}
-              style={{
-                padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", color: "var(--text-muted)",
-                borderRadius: "6px", cursor: "pointer", letterSpacing: "1px", flexShrink: 0,
-              }}
-            >
-              Sign out
-            </button>
-          </>
+      {/* 右上角登入/登出：掛到 body 下用 JS 建立的固定錨點 (#auth-fixed-anchor)，確保永遠釘在視窗右上角 */}
+      {authPortalReady && authAnchorRef.current && createPortal(
+        <div style={{
+          display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "clamp(0.65rem, 2.2vw, 0.75rem)",
+          background: "rgba(0,0,0,0.45)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+          padding: "12px 16px", margin: "12px", borderRadius: "8px",
+          boxShadow: "0 2px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.1)",
+        }}>
+          {user ? (
+            <>
+              <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1 }} title={user.email ?? undefined}>{user.email ?? user.id.slice(0, 8)}</span>
+              <button
+                type="button"
+                onClick={async () => { await getSupabase()?.auth.signOut(); }}
+                style={{
+                  padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", color: "var(--text-muted)",
+                  borderRadius: "6px", cursor: "pointer", letterSpacing: "1px", flexShrink: 0,
+                }}
+              >
+                Sign out
+              </button>
+            </>
           ) : (
             <button
               type="button"
@@ -2178,8 +2176,10 @@ export default function Home() {
             >
               Sign in with Google
             </button>
-        )}
-      </div>
+          )}
+        </div>,
+        authAnchorRef.current
+      )}
 
       {commandAccepted && (
         <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:108,pointerEvents:"none",
