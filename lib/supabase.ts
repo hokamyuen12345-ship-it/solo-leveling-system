@@ -1,0 +1,34 @@
+import { createClient, type SupabaseClient as SupabaseClientType } from "@supabase/supabase-js";
+
+export type SupabaseClient = SupabaseClientType;
+
+function getSupabaseUrl(): string | undefined {
+  if (typeof window !== "undefined") return process.env.NEXT_PUBLIC_SUPABASE_URL;
+  return process.env.NEXT_PUBLIC_SUPABASE_URL;
+}
+function getSupabaseAnonKey(): string | undefined {
+  if (typeof window !== "undefined") return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+}
+
+let client: SupabaseClient | null = null;
+
+/** Client for browser; use only in client components. Returns null if env is not set. */
+export function getSupabase(): SupabaseClient | null {
+  const url = getSupabaseUrl();
+  const key = getSupabaseAnonKey();
+  if (!url || !key) return null;
+  if (!client) {
+    client = createClient(url, key);
+  }
+  return client;
+}
+
+export const SYNC_KEYS = [
+  "slq_v2",
+  "slq_meta_v1",
+  "slq_history_v1",
+  "slq_boss_v1",
+  "slq_achievements_v1",
+  "slq_voice_enabled",
+] as const;
