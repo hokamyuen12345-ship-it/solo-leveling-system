@@ -934,6 +934,7 @@ function QuestCard({
   done,
   onStart,
   onUndo,
+  onSettings,
   onHoverSound,
   onClickSound,
   isAi,
@@ -946,6 +947,7 @@ function QuestCard({
   done: boolean;
   onStart: () => void;
   onUndo: () => void;
+  onSettings?: () => void;
   onHoverSound?: () => void;
   onClickSound?: () => void;
   isAi?: boolean;
@@ -1004,6 +1006,28 @@ function QuestCard({
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {!!onSettings && (
+            <button
+              type="button"
+              onClick={() => onSettings()}
+              style={{
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: "6px",
+                padding: "8px 10px",
+                color: "#A5D4F7",
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                letterSpacing: "1px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+              aria-label="Task settings"
+              title="Task settings"
+            >
+              ⚙
+            </button>
+          )}
           {!done && (
             <button
               className="start-btn start-btn-glitch"
@@ -1560,6 +1584,70 @@ export default function Home() {
   const sound = useSound();
   const systemVoice = useSystemVoice();
 
+  // ===== 任務自訂設定（localStorage）=====
+  const QUEST_OVERRIDES_KEY = "slq_quest_overrides_v1";
+  const [questOverrides, setQuestOverrides] = useState<Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>>>({});
+  const [questSettingsOpen, setQuestSettingsOpen] = useState(false);
+  const [editingQuestId, setEditingQuestId] = useState<number | null>(null);
+  const [editingLabel, setEditingLabel] = useState("");
+  const [editingMinutes, setEditingMinutes] = useState("");
+  const [editingExp, setEditingExp] = useState("");
+  const [settingsPortalReady, setSettingsPortalReady] = useState(false);
+
+  useEffect(() => {
+    setSettingsPortalReady(true);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(QUEST_OVERRIDES_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, { label?: string; minutes?: number; exp?: number }>;
+      const next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>> = {};
+      Object.entries(parsed).forEach(([k, v]) => {
+        const id = Number(k);
+        if (!Number.isFinite(id)) return;
+        next[id] = {};
+        if (typeof v.label === "string") next[id].label = v.label;
+        if (typeof v.minutes === "number") next[id].minutes = v.minutes;
+        if (typeof v.exp === "number") next[id].exp = v.exp;
+      });
+      setQuestOverrides(next);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const saveQuestOverrides = useCallback((next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>>) => {
+    setQuestOverrides(next);
+    try {
+      localStorage.setItem(QUEST_OVERRIDES_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const questsBase = useMemo(() => {
+    return QUESTS.map((q) => {
+      const o = questOverrides[q.id];
+      if (!o) return q;
+      return {
+        ...q,
+        label: typeof o.label === "string" ? o.label : q.label,
+        minutes: typeof o.minutes === "number" ? o.minutes : q.minutes,
+        exp: typeof o.exp === "number" ? o.exp : q.exp,
+      };
+    });
+  }, [questOverrides]);
+
+  const openQuestSettings = useCallback((quest: Quest) => {
+    setEditingQuestId(quest.id);
+    setEditingLabel(quest.label);
+    setEditingMinutes(String(quest.minutes));
+    setEditingExp(String(quest.exp));
+    setQuestSettingsOpen(true);
+  }, []);
+
   const fadeOutBgm = useCallback(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -1590,8 +1678,8 @@ export default function Home() {
   restoreBgmVolumeRef.current = restoreBgmVolume;
   const [timeTick, setTimeTick] = useState(0);
   const systemMessageFromState = useMemo(() => {
-    const completedDaily = completed.filter(id => QUESTS.some(q => q.id === id)).length;
-    const totalDaily = QUESTS.length;
+    const completedDaily = completed.filter(id => questsBase.some(q => q.id === id)).length;
+    const totalDaily = questsBase.length;
     const rate = totalDaily > 0 ? completedDaily / totalDaily : 0;
     const now = new Date();
     const hoursLeft = 23 - now.getHours() + (59 - now.getMinutes()) / 60;
@@ -1603,7 +1691,7 @@ export default function Home() {
     if (rate >= 0.7) return "[SYSTEM] 穩定成長中，繼續保持。";
     if (rate < 0.3 && totalDaily > 0) return "[SYSTEM] 檢測到怠惰情緒，警告：弱者將被淘汰。";
     return "[NOTICE] 今天的目標是突破極限。";
-  }, [completed, timeTick]);
+  }, [completed, questsBase, timeTick]);
   useEffect(() => {
     const t = setInterval(() => setTimeTick(n => n + 1), 60000);
     return () => clearInterval(t);
@@ -1628,7 +1716,7 @@ export default function Home() {
       }
       if (e.code === "Space") {
         e.preventDefault();
-        const firstUnfinished = QUESTS.find(q => !completed.includes(q.id));
+        const firstUnfinished = questsBase.find(q => !completed.includes(q.id));
         if (firstUnfinished && !activeTimer) {
           sound.playClick();
           toggle(firstUnfinished.id);
@@ -1639,7 +1727,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeTimer, completed, sound, systemVoice.speak]);
+  }, [activeTimer, completed, questsBase, sound, systemVoice.speak]);
 
   useEffect(() => {
     if (!missionCompleteEffect) return;
@@ -2765,10 +2853,10 @@ export default function Home() {
             </div>
 
             {tab==="tasks" && (() => {
-                const topPriorityQuests = [...QUESTS.filter(q => q.type === "challenge")].sort((a, b) => b.exp - a.exp).slice(0, 3);
-                const dailySystemQuests = [...QUESTS.filter(q => q.type === "daily")].sort((a, b) => b.exp - a.exp);
+                const topPriorityQuests = [...questsBase.filter(q => q.type === "challenge")].sort((a, b) => b.exp - a.exp).slice(0, 3);
+                const dailySystemQuests = [...questsBase.filter(q => q.type === "daily")].sort((a, b) => b.exp - a.exp);
                 const supportQuests = [
-                  ...QUESTS.filter(q => q.type === "hidden"),
+                  ...questsBase.filter(q => q.type === "hidden"),
                   ...(dailyRandomHiddenQuest ? [dailyRandomHiddenQuest] : []),
                   ...aiQuests,
                 ].sort((a, b) => b.exp - a.exp);
@@ -2784,7 +2872,18 @@ export default function Home() {
                   <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
                     {topPriorityQuests.map((q, idx) => (
                         <div key={q.id} style={{border:"2px solid rgba(56,189,248,0.6)",borderRadius:"12px",padding:"3px",background:"rgba(56,189,248,0.08)",boxShadow:"0 0 20px rgba(56,189,248,0.2)"}}>
-                          <QuestCard quest={q} accentColor="#38bdf8" done={completed.includes(q.id)} onStart={()=>toggle(q.id)} onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))} onHoverSound={sound.playHover} onClickSound={sound.playClick} idx={idx} priority />
+                          <QuestCard
+                            quest={q}
+                            accentColor="#38bdf8"
+                            done={completed.includes(q.id)}
+                            onStart={()=>toggle(q.id)}
+                            onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
+                            onSettings={() => openQuestSettings(q)}
+                            onHoverSound={sound.playHover}
+                            onClickSound={sound.playClick}
+                            idx={idx}
+                            priority
+                          />
                         </div>
                       ))}
                   </div>
@@ -2800,7 +2899,19 @@ export default function Home() {
                   {dailySystemQuests.map((q, idx) => {
                     const evolved = (streak>=3 && q.id===1) ? "基礎體能恢復 II：各項 120 下" : (streak>=3 && q.id===2) ? "基礎耐力訓練 II：6 公里/600 下" : undefined;
                     return (
-                      <QuestCard key={q.id} quest={q} optionalDisplayLabel={evolved} accentColor="#4A9A8A" done={completed.includes(q.id)} onStart={()=>toggle(q.id)} onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))} onHoverSound={sound.playHover} onClickSound={sound.playClick} idx={idx} />
+                      <QuestCard
+                        key={q.id}
+                        quest={q}
+                        optionalDisplayLabel={evolved}
+                        accentColor="#4A9A8A"
+                        done={completed.includes(q.id)}
+                        onStart={()=>toggle(q.id)}
+                        onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
+                        onSettings={() => openQuestSettings(q)}
+                        onHoverSound={sound.playHover}
+                        onClickSound={sound.playClick}
+                        idx={idx}
+                      />
                     );
                   })}
                 </div>
@@ -2814,7 +2925,19 @@ export default function Home() {
                     </div>
                     <div style={{color:"#5A6A7A",fontSize:"0.52rem",letterSpacing:"1px",marginBottom:"10px"}}>輔助任務 · 不分散高優先事項</div>
                     {supportQuests.map((q, idx) => (
-                      <QuestCard key={`support-${q.id}-${idx}`} quest={q} accentColor="#6B8AAF" done={completed.includes(q.id)} onStart={()=>toggle(q.id)} onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))} onHoverSound={sound.playHover} onClickSound={sound.playClick} isAi={aiQuests.some(a=>a.id===q.id)} idx={idx} />
+                      <QuestCard
+                        key={`support-${q.id}-${idx}`}
+                        quest={q}
+                        accentColor="#6B8AAF"
+                        done={completed.includes(q.id)}
+                        onStart={()=>toggle(q.id)}
+                        onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
+                        onSettings={() => openQuestSettings(q)}
+                        onHoverSound={sound.playHover}
+                        onClickSound={sound.playClick}
+                        isAi={aiQuests.some(a=>a.id===q.id)}
+                        idx={idx}
+                      />
                     ))}
                   </div>
                 )}
@@ -2898,6 +3021,184 @@ export default function Home() {
                 </div>
               </div>
             ); })()}
+
+            {/* 任務設定視窗 */}
+            {settingsPortalReady && questSettingsOpen && editingQuestId != null && typeof document !== "undefined" &&
+              createPortal(
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  onClick={() => setQuestSettingsOpen(false)}
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 9999,
+                    background: "rgba(0,0,0,0.55)",
+                    backdropFilter: "blur(10px)",
+                    WebkitBackdropFilter: "blur(10px)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "18px",
+                  }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: "min(680px, 96vw)",
+                      borderRadius: "14px",
+                      border: "1px solid rgba(56,189,248,0.35)",
+                      background: "rgba(15,23,42,0.95)",
+                      boxShadow: "0 0 30px rgba(56,189,248,0.25)",
+                      padding: "18px",
+                      color: "#E0F2FE",
+                      fontFamily: "var(--font-ui)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+                      <div>
+                        <div style={{ fontSize: "0.7rem", letterSpacing: "0.32em", textTransform: "uppercase", color: "rgba(148,208,255,0.9)" }}>
+                          TASK SETTINGS
+                        </div>
+                        <div style={{ fontSize: "0.9rem", fontWeight: 700, marginTop: "4px" }}>
+                          #{editingQuestId}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQuestSettingsOpen(false)}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.14)",
+                          background: "rgba(255,255,255,0.06)",
+                          color: "#A5D4F7",
+                          padding: "8px 10px",
+                          borderRadius: "10px",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          letterSpacing: "1px",
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "10px", marginTop: "14px" }}>
+                    <label style={{ display: "grid", gap: "6px" }}>
+                      <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>Title</span>
+                      <input
+                        value={editingLabel}
+                        onChange={(e) => setEditingLabel(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "10px",
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      />
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                      <label style={{ display: "grid", gap: "6px" }}>
+                        <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>Minutes</span>
+                        <input
+                          inputMode="numeric"
+                          value={editingMinutes}
+                          onChange={(e) => setEditingMinutes(e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: "grid", gap: "6px" }}>
+                        <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>EXP</span>
+                        <input
+                          inputMode="numeric"
+                          value={editingExp}
+                          onChange={(e) => setEditingExp(e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "16px", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = { ...questOverrides };
+                        delete next[editingQuestId];
+                        saveQuestOverrides(next);
+                        setQuestSettingsOpen(false);
+                      }}
+                      style={{
+                        border: "1px solid rgba(248,113,113,0.6)",
+                        background: "rgba(239,68,68,0.12)",
+                        color: "#FCA5A5",
+                        padding: "10px 12px",
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                        letterSpacing: "0.14em",
+                        textTransform: "uppercase",
+                        fontSize: "0.65rem",
+                      }}
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const mins = Math.max(1, Math.min(240, Number.parseInt(editingMinutes, 10) || 0));
+                        const exp = Math.max(0, Math.min(9999, Number.parseInt(editingExp, 10) || 0));
+                        const next = {
+                          ...questOverrides,
+                          [editingQuestId]: {
+                            label: editingLabel.trim() || undefined,
+                            minutes: Number.isFinite(mins) ? mins : undefined,
+                            exp: Number.isFinite(exp) ? exp : undefined,
+                          },
+                        };
+                        saveQuestOverrides(next);
+                        setQuestSettingsOpen(false);
+                      }}
+                      style={{
+                        border: "1px solid rgba(56,189,248,0.8)",
+                        background: "rgba(56,189,248,0.18)",
+                        color: "#E0F2FE",
+                        padding: "10px 14px",
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        fontWeight: 800,
+                        letterSpacing: "0.18em",
+                        textTransform: "uppercase",
+                        fontSize: "0.65rem",
+                      }}
+                    >
+                      Save
+                    </button>
+                  </div>
+                  </div>
+                </div>,
+                document.body,
+              )
+            }
 
             {tab==="summary" && (
               <div className="summary-card-in" style={{display:"flex",flexDirection:"column",gap:"20px",opacity:0}}>
