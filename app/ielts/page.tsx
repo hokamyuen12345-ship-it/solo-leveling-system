@@ -1543,7 +1543,10 @@ function RecordsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSS
                   </span>
                   <span className="ielts-text-caption">· {r.updatedAt}</span>
                 </div>
-                <div className="ielts-text-heading" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
+                <div
+                  className="ielts-text-heading"
+                  style={{ marginTop: 6, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}
+                >
                   {r.prompt}
                 </div>
               </div>
@@ -1576,7 +1579,10 @@ function RecordsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSS
                 <div className="ielts-text-caption" style={{ marginBottom: 6 }}>
                   你的回答
                 </div>
-                <div className="ielts-text-body" style={{ whiteSpace: "pre-wrap", color: "var(--ielts-text-2)", fontSize: 14 }}>
+                <div
+                  className="ielts-text-body"
+                  style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", color: "var(--ielts-text-2)", fontSize: 14 }}
+                >
                   {r.response}
                 </div>
               </div>
@@ -1585,7 +1591,10 @@ function RecordsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSS
                   <div className="ielts-text-caption" style={{ marginBottom: 6 }}>
                     備註
                   </div>
-                  <div className="ielts-text-caption" style={{ whiteSpace: "pre-wrap", color: "var(--ielts-text-3)" }}>
+                  <div
+                    className="ielts-text-caption"
+                    style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", color: "var(--ielts-text-3)" }}
+                  >
                     {r.notes}
                   </div>
                 </div>
