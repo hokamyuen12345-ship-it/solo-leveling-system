@@ -31,4 +31,7 @@ export const SYNC_KEYS = [
   "slq_boss_v1",
   "slq_achievements_v1",
   "slq_voice_enabled",
+  "slq_custom_quests_v1",
+  "slq_task_sections_v1",
+  "slq_hidden_quest_ids_v1",
 ] as const;

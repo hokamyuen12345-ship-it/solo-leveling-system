@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
+import type { DragEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
@@ -220,6 +221,9 @@ function useSystemVoice() {
 type AttrKey = "PHY" | "INT" | "EXE" | "RES" | "SOC";
 type QuestType = "daily" | "challenge" | "hidden" | "boss" | "emergency";
 
+type QuestCompletionMode = "timer" | "instant";
+type TaskSectionId = "daily" | "support" | "boss" | "emergency";
+
 interface Quest {
   id: number;
   type: QuestType;
@@ -227,6 +231,66 @@ interface Quest {
   exp: number;
   attr: AttrKey;
   minutes: number;
+  /** 自訂任務：計時或一鍵完成；內建任務未設時依 type 推斷 */
+  completionMode?: QuestCompletionMode;
+}
+
+/** 自訂任務（存 localStorage） */
+type CustomQuestStored = {
+  id: number;
+  zone: TaskSectionId;
+  label: string;
+  exp: number;
+  minutes: number;
+  attr: AttrKey;
+  mode: QuestCompletionMode;
+};
+
+const CUSTOM_QUEST_MIN_ID = 100_000;
+const CUSTOM_QUESTS_KEY = "slq_custom_quests_v1";
+const TASK_SECTIONS_PREFS_KEY = "slq_task_sections_v1";
+const HIDDEN_QUEST_IDS_KEY = "slq_hidden_quest_ids_v1";
+
+const DEFAULT_SECTION_ORDER: TaskSectionId[] = ["daily", "support", "boss", "emergency"];
+
+function normalizeSectionOrder(raw: unknown): TaskSectionId[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_SECTION_ORDER];
+  const valid = raw.filter((x): x is TaskSectionId =>
+    (DEFAULT_SECTION_ORDER as readonly string[]).includes(x as string),
+  );
+  const missing = DEFAULT_SECTION_ORDER.filter((id) => !valid.includes(id));
+  return [...valid, ...missing].slice(0, DEFAULT_SECTION_ORDER.length);
+}
+
+function zoneToQuestType(zone: TaskSectionId): QuestType {
+  switch (zone) {
+    case "daily": return "daily";
+    case "support": return "hidden";
+    case "boss": return "boss";
+    case "emergency": return "emergency";
+  }
+}
+
+function customStoredToQuest(c: CustomQuestStored): Quest {
+  return {
+    id: c.id,
+    type: zoneToQuestType(c.zone),
+    label: c.label,
+    exp: c.exp,
+    attr: c.attr,
+    minutes: c.minutes,
+    completionMode: c.mode,
+  };
+}
+
+function shouldUseInstantComplete(q: Quest): boolean {
+  if (q.completionMode === "timer") return false;
+  if (q.completionMode === "instant") return true;
+  return q.type === "emergency";
+}
+
+function isWeeklyBossQuest(q: Quest): boolean {
+  return q.type === "boss" && q.id >= 200 && q.id < CUSTOM_QUEST_MIN_ID;
 }
 
 interface MissionHistoryEntry {
@@ -430,7 +494,6 @@ const EMERGENCY_QUESTS: Quest[] = [
 ];
 const INACTIVE_HOURS = 24;
 
-const SHADOW_NAMES = ["兵卒", "騎士", "將軍", "統領", "君王"];
 
 function getMeta(): {
   lastActivityAt?: string;
@@ -944,6 +1007,8 @@ function QuestCard({
   idx,
   optionalDisplayLabel,
   priority,
+  primaryActionLabel,
+  onDelete,
 }: {
   quest: Quest;
   accentColor: string;
@@ -957,6 +1022,10 @@ function QuestCard({
   idx?: number;
   optionalDisplayLabel?: string;
   priority?: boolean;
+  /** 主按鈕文案（例如一鍵完成） */
+  primaryActionLabel?: string;
+  /** 自訂任務刪除 */
+  onDelete?: () => void;
 }) {
   const stars = getQuestDifficulty(quest);
   const [hover, setHover] = useState(false);
@@ -999,7 +1068,9 @@ function QuestCard({
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", fontSize: "0.65rem", color: "#4A6078" }}>
             <span style={{ color: accentColor }}>Difficulty: {"★".repeat(stars)}{"☆".repeat(3 - stars)}</span>
-            <span>Duration: {quest.minutes} min</span>
+            <span>
+              {shouldUseInstantComplete(quest) ? "模式: 一鍵完成" : `Duration: ${quest.minutes} min`}
+            </span>
             <span className="font-mono-num" style={{ color: done ? "#3A5A4A" : "#2ECC71" }}>Reward: +{quest.exp} EXP</span>
           </div>
           {hover && !done && (
@@ -1009,6 +1080,27 @@ function QuestCard({
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {!!onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete()}
+              style={{
+                background: "rgba(231,76,60,0.12)",
+                border: "1px solid rgba(231,76,60,0.35)",
+                borderRadius: "6px",
+                padding: "8px 10px",
+                color: "#F87171",
+                fontSize: "0.65rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+              aria-label="刪除自訂任務"
+              title="刪除自訂任務"
+            >
+              刪除
+            </button>
+          )}
           {!!onSettings && (
             <button
               type="button"
@@ -1049,7 +1141,7 @@ function QuestCard({
                 boxShadow: `0 0 12px ${accentColor}44`,
               }}
             >
-              START MISSION
+              {primaryActionLabel ?? "START MISSION"}
             </button>
           )}
         </div>
@@ -1548,7 +1640,7 @@ export default function Home() {
   const [debuffs,   setDebuffs]   = useState<number[]>([]);
   const [totalExp,  setTotalExp]  = useState(BASE_EXP);
   const [streak,    setStreak]    = useState(0);
-  const [tab, setTab]             = useState<"tasks"|"summary"|"analytics">("tasks");
+  const [tab, setTab]             = useState<"tasks"|"analytics">("tasks");
   const [expRange, setExpRange]   = useState<"7"|"14"|"30">("14");
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [loaded, setLoaded]       = useState(false);
@@ -1592,6 +1684,16 @@ export default function Home() {
   // ===== 任務自訂設定（localStorage）=====
   const QUEST_OVERRIDES_KEY = "slq_quest_overrides_v1";
   const [questOverrides, setQuestOverrides] = useState<Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>>>({});
+  const [customQuests, setCustomQuests] = useState<CustomQuestStored[]>([]);
+  const [hiddenQuestIds, setHiddenQuestIds] = useState<number[]>([]);
+  const [sectionOrder, setSectionOrder] = useState<TaskSectionId[]>(() => [...DEFAULT_SECTION_ORDER]);
+  const [sectionCollapsed, setSectionCollapsed] = useState<Partial<Record<TaskSectionId, boolean>>>({});
+  const [addQuestZone, setAddQuestZone] = useState<TaskSectionId | null>(null);
+  const [addQuestLabel, setAddQuestLabel] = useState("");
+  const [addQuestExp, setAddQuestExp] = useState("15");
+  const [addQuestMinutes, setAddQuestMinutes] = useState("25");
+  const [addQuestAttr, setAddQuestAttr] = useState<AttrKey>("EXE");
+  const [addQuestMode, setAddQuestMode] = useState<QuestCompletionMode>("timer");
   const [questSettingsOpen, setQuestSettingsOpen] = useState(false);
   const [editingQuestId, setEditingQuestId] = useState<number | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
@@ -1615,7 +1717,7 @@ export default function Home() {
     }
   }, []);
 
-  /** 手機寬度：顯示底部固定「IELTS 備考」入口（隨視窗捲動仍貼底） */
+  /** 窄視窗（≤768px）：底部 IELTS 捷徑、較鬆的安全區內距、分頁短標籤等 */
   const [mobileIeltsFab, setMobileIeltsFab] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1656,7 +1758,8 @@ export default function Home() {
   }, []);
 
   const questsBase = useMemo(() => {
-    return QUESTS.map((q) => {
+    const hidden = new Set(hiddenQuestIds);
+    const built = QUESTS.map((q) => {
       const o = questOverrides[q.id];
       if (!o) return q;
       return {
@@ -1665,8 +1768,52 @@ export default function Home() {
         minutes: typeof o.minutes === "number" ? o.minutes : q.minutes,
         exp: typeof o.exp === "number" ? o.exp : q.exp,
       };
-    });
-  }, [questOverrides]);
+    }).filter((q) => !hidden.has(q.id));
+    const custom = customQuests.map(customStoredToQuest);
+    return [...built, ...custom];
+  }, [questOverrides, customQuests, hiddenQuestIds]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const c = localStorage.getItem(CUSTOM_QUESTS_KEY);
+      if (c) setCustomQuests(JSON.parse(c) as CustomQuestStored[]);
+      const h = localStorage.getItem(HIDDEN_QUEST_IDS_KEY);
+      if (h) {
+        const parsed = JSON.parse(h) as unknown;
+        if (Array.isArray(parsed)) setHiddenQuestIds(parsed.filter((x): x is number => typeof x === "number"));
+      }
+      const s = localStorage.getItem(TASK_SECTIONS_PREFS_KEY);
+      if (s) {
+        const p = JSON.parse(s) as { order?: TaskSectionId[]; collapsed?: Partial<Record<TaskSectionId, boolean>> };
+        setSectionOrder(normalizeSectionOrder(p.order));
+        if (p.collapsed && typeof p.collapsed === "object") setSectionCollapsed(p.collapsed);
+      }
+    } catch {
+      /* */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(CUSTOM_QUESTS_KEY, JSON.stringify(customQuests));
+    } catch {
+      /* */
+    }
+  }, [customQuests]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(
+        TASK_SECTIONS_PREFS_KEY,
+        JSON.stringify({ order: sectionOrder, collapsed: sectionCollapsed }),
+      );
+    } catch {
+      /* */
+    }
+  }, [sectionOrder, sectionCollapsed]);
 
   const openQuestSettings = useCallback((quest: Quest) => {
     setEditingQuestId(quest.id);
@@ -1774,9 +1921,7 @@ export default function Home() {
 
   useEffect(() => {
     const a = audioRef.current;
-    if (!a) return;
-    a.volume = 0.25;
-    a.play().then(() => setIsPlaying(true)).catch(() => {});
+    if (a) a.volume = 0.25;
   }, []);
 
   useEffect(() => {
@@ -1950,7 +2095,7 @@ export default function Home() {
     if (!loaded) return;
     const today = getToday();
     const todayGain =
-      QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
+      questsBase.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
       + (dailyRandomHiddenQuest && completed.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0)
       + aiQuests.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
       + EMERGENCY_QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
@@ -1990,7 +2135,7 @@ export default function Home() {
       sound.playSuccess();
       setTimeout(() => setShowArise(false), 3500);
     }
-  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenQuest, user]);
+  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenQuest, user, questsBase, skillBonus]);
 
   // Periodic sync to Supabase when logged in (catches meta, history, boss, achievements, voice)
   useEffect(() => {
@@ -2034,7 +2179,7 @@ export default function Home() {
   }, [loaded, streak, completed, debuffs]);
 
   const todayExp =
-    QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
+    questsBase.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
     + (dailyRandomHiddenQuest && completed.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0)
     + aiQuests.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
     + EMERGENCY_QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
@@ -2061,7 +2206,7 @@ export default function Home() {
   }, [rank, level, loaded]);
 
   const attrs = Object.entries(BASE_ATTRS).map(([k,v]) => {
-    const bonus = QUESTS.filter(q=>completed.includes(q.id) && q.attr===k).length * 3;
+    const bonus = questsBase.filter(q=>completed.includes(q.id) && q.attr===k).length * 3;
     return { ...ATTRIBUTES.find(a=>a.key===k)!, value: Math.min(100, v+bonus) };
   });
 
@@ -2127,16 +2272,72 @@ export default function Home() {
     return { weekData, dailyExpLast14, dailyExpLast30, missionHistory, completionRatePct, weeklyDiff };
   }, [todayExp, loaded, completed, debuffs]);
 
+  function completeQuestNow(q: Quest) {
+    if (completed.includes(q.id)) return;
+    const actualExp = skillBonus(q);
+    const next = [...completed, q.id];
+    setCompleted(next);
+    sound.playSuccess();
+    systemVoice.speak("MISSION COMPLETE");
+    systemVoice.speak("EXPERIENCE GAINED");
+    setSystemHud({ id: `mc-${Date.now()}`, title: "MISSION COMPLETE", subtitle: `+${actualExp} EXP` });
+    setMissionCompleteEffect({ exp: actualExp, questLabel: q.label, questId: q.id });
+    setFloatingExp({ value: actualExp, key: Date.now() });
+    setTimeout(() => setMissionCompleteEffect(null), 2200);
+    setTimeout(() => setFloatingExp(null), 1300);
+    const newStreak = streak === 0 ? 1 : streak;
+    setStreak(newStreak);
+    setMeta({ ...getMeta(), lastActivityAt: new Date().toISOString() });
+    if (q.type === "emergency") setEmergencyActive(false);
+    const nx =
+      BASE_EXP +
+      questsBase.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+      (dailyRandomHiddenQuest && next.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0) +
+      aiQuests.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+      EMERGENCY_QUESTS.filter((x) => next.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
+      bossExpToday +
+      DEBUFFS.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
+    const newLv = LEVEL_TABLE.reduce((lv, req, i) => (nx >= req ? i + 1 : lv), 1);
+    if (newLv > level)
+      setTimeout(() => {
+        systemVoice.speak("LEVEL UP");
+        setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${newLv - 1} → Lv.${newLv}` });
+        setShowLevelUp(true);
+        setTimeout(() => setShowLevelUp(false), 3000);
+      }, 100);
+
+    appendMissionHistory({
+      id: `${Date.now()}-${q.id}`,
+      missionId: q.id,
+      label: q.label,
+      type: q.type,
+      attr: q.attr,
+      durationMin: q.minutes,
+      completed: true,
+      date: getToday(),
+      finishedAt: new Date().toISOString(),
+      expGained: actualExp,
+    });
+
+    const newly = evaluateAchievements({ streak: newStreak });
+    if (newly.length > 0) {
+      setUnlockedAchievements((prev) => Array.from(new Set([...prev, ...newly.map((a) => a.id)])));
+      setJustUnlocked(newly[0]);
+      setSystemHud({ id: `ach-${newly[0].id}`, title: "NEW ACHIEVEMENT UNLOCKED", subtitle: newly[0].title });
+      systemVoice.speak("ACHIEVEMENT UNLOCKED");
+      setTimeout(() => setJustUnlocked(null), 3000);
+    }
+  }
+
   function handleTimerComplete() {
     if (!activeTimer) return;
     const q = activeTimer;
     restoreBgmVolume();
     setActiveTimer(null);
-    const isBoss = q.type === "boss" && q.id >= 200;
     setMeta({ lastActivityAt: new Date().toISOString() });
     setEmergencyActive(false);
 
-    if (isBoss) {
+    if (isWeeklyBossQuest(q)) {
       systemVoice.speak("BOSS DEFEATED");
       setTimeout(() => systemVoice.speak("RAID COMPLETE"), 1200);
       setBossExpToday(q.exp);
@@ -2152,47 +2353,37 @@ export default function Home() {
       });
       const newStreak = streak === 0 ? 1 : streak;
       setStreak(newStreak);
-      const nx = BASE_EXP + QUESTS.filter(x=>completed.includes(x.id)).reduce((s,x)=>s+skillBonus(x),0) + q.exp + DEBUFFS.filter(d=>debuffs.includes(d.id)).reduce((s,d)=>s+d.exp,0);
-      const newLv = LEVEL_TABLE.reduce((lv,req,i)=>nx>=req?i+1:lv,1);
-      if (newLv > level) setTimeout(()=>{ systemVoice.speak("LEVEL UP"); setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${newLv-1} → Lv.${newLv}` }); setShowLevelUp(true); setTimeout(()=>setShowLevelUp(false),3000); },100);
+      const nx =
+        BASE_EXP +
+        questsBase.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+        q.exp +
+        (dailyRandomHiddenQuest && completed.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0) +
+        aiQuests.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+        EMERGENCY_QUESTS.filter((x) => completed.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
+        DEBUFFS.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
+      const newLv = LEVEL_TABLE.reduce((lv, req, i) => (nx >= req ? i + 1 : lv), 1);
+      if (newLv > level)
+        setTimeout(() => {
+          systemVoice.speak("LEVEL UP");
+          setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${newLv - 1} → Lv.${newLv}` });
+          setShowLevelUp(true);
+          setTimeout(() => setShowLevelUp(false), 3000);
+        }, 100);
       return;
     }
 
-    const actualExp = skillBonus(q);
-    const next = [...completed, q.id];
-    setCompleted(next);
-    sound.playSuccess();
-    systemVoice.speak("MISSION COMPLETE");
-    systemVoice.speak("EXPERIENCE GAINED");
-    setSystemHud({ id: `mc-${Date.now()}`, title: "MISSION COMPLETE", subtitle: `+${actualExp} EXP` });
-    setMissionCompleteEffect({ exp: actualExp, questLabel: q.label, questId: q.id });
-    setFloatingExp({ value: actualExp, key: Date.now() });
-    setTimeout(() => setMissionCompleteEffect(null), 2200);
-    setTimeout(() => setFloatingExp(null), 1300);
-    const newStreak = streak === 0 ? 1 : streak;
-    setStreak(newStreak);
-    const nx = BASE_EXP + QUESTS.filter(x=>next.includes(x.id)).reduce((s,x)=>s+skillBonus(x),0)
-      + bossExpToday + DEBUFFS.filter(d=>debuffs.includes(d.id)).reduce((s,d)=>s+d.exp,0);
-    const newLv = LEVEL_TABLE.reduce((lv,req,i)=>nx>=req?i+1:lv,1);
-    if (newLv > level) setTimeout(()=>{ systemVoice.speak("LEVEL UP"); setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${newLv-1} → Lv.${newLv}` }); setShowLevelUp(true); setTimeout(()=>setShowLevelUp(false),3000); },100);
-
-    appendMissionHistory({
-      id: `${Date.now()}-${q.id}`, missionId: q.id, label: q.label, type: q.type, attr: q.attr,
-      durationMin: q.minutes, completed: true, date: getToday(), finishedAt: new Date().toISOString(), expGained: actualExp,
-    });
-
-    const newly = evaluateAchievements({ streak: newStreak });
-    if (newly.length > 0) {
-      setUnlockedAchievements(prev => Array.from(new Set([...prev, ...newly.map(a => a.id)])));
-      setJustUnlocked(newly[0]);
-      setSystemHud({ id: `ach-${newly[0].id}`, title: "NEW ACHIEVEMENT UNLOCKED", subtitle: newly[0].title });
-      systemVoice.speak("ACHIEVEMENT UNLOCKED");
-      setTimeout(() => setJustUnlocked(null), 3000);
-    }
+    completeQuestNow(q);
   }
 
   function getAllQuests(): Quest[] {
-    return [...QUESTS, ...(dailyRandomHiddenQuest ? [dailyRandomHiddenQuest] : []), ...(weeklyBoss ? [weeklyBoss] : []), ...(emergencyActive ? EMERGENCY_QUESTS : []), ...aiQuests];
+    const hid = new Set(hiddenQuestIds);
+    return [
+      ...questsBase,
+      ...(dailyRandomHiddenQuest && !hid.has(dailyRandomHiddenQuest.id) ? [dailyRandomHiddenQuest] : []),
+      ...(weeklyBoss ? [weeklyBoss] : []),
+      ...(emergencyActive ? EMERGENCY_QUESTS.filter((q) => !hid.has(q.id)) : []),
+      ...aiQuests.filter((q) => !hid.has(q.id)),
+    ];
   }
   const completedTodayList = useMemo(() => {
     const list: { id: number; label: string; exp: number; attr: AttrKey }[] = [];
@@ -2206,18 +2397,23 @@ export default function Home() {
     });
     if (bossExpToday > 0) list.push({ id: -1, label: "BOSS RAID", exp: bossExpToday, attr: "EXE" });
     return list;
-  }, [completed, bossExpToday, dailyRandomHiddenQuest, emergencyActive, aiQuests, weeklyBoss, skillBonus]);
+  }, [completed, bossExpToday, dailyRandomHiddenQuest, emergencyActive, aiQuests, weeklyBoss, skillBonus, hiddenQuestIds]);
   function findQuest(id: number): Quest | undefined {
     return getAllQuests().find(q => q.id === id);
   }
   function toggle(id: number) {
     const was = completed.includes(id);
     if (was) {
-      setCompleted(completed.filter(x=>x!==id));
-    } else {
-      const q = findQuest(id);
-      if (q) setActiveTimer(q);
+      setCompleted(completed.filter((x) => x !== id));
+      return;
     }
+    const q = findQuest(id);
+    if (!q) return;
+    if (shouldUseInstantComplete(q)) {
+      completeQuestNow(q);
+      return;
+    }
+    setActiveTimer(q);
   }
 
   return (
@@ -2226,8 +2422,7 @@ export default function Home() {
         ref={audioRef}
         src="/bgm.mp3"
         loop
-        preload="auto"
-        autoPlay
+        preload="metadata"
         style={{ display: "none" }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
@@ -2240,29 +2435,33 @@ export default function Home() {
             systemVoice.speak("SYSTEM READY");
           }}
           onUserGesture={() => {
-            const a = audioRef.current;
-            if (a) {
-              a.volume = 0.25;
-              a.play().then(() => setIsPlaying(true)).catch(() => {});
-            }
+            /* BGM 改為僅能透過 ♪ BGM 按鈕手動播放，不在此自動播放 */
           }}
         />
       ) : !loaded ? (
-        <main style={{background:"var(--bg-primary)",minHeight:"100vh",display:"flex",alignItems:"center",
+        <main style={{background:"var(--bg-primary)",minHeight:"100dvh",display:"flex",alignItems:"center",
           justifyContent:"center",fontFamily:"var(--font-ui)",color:"var(--text-muted)"}}>
           SYSTEM LOADING...
         </main>
       ) : (
     <main style={{
       background: penaltyModeActive ? "rgba(80,0,0,0.12)" : "transparent",
-      minHeight:"100vh",position:"relative",
+      minHeight:"100dvh",position:"relative",
       fontFamily:"var(--font-ui)",
-      paddingTop:"var(--space-lg)",
-      paddingLeft:"var(--space-lg)",
-      paddingRight:"var(--space-lg)",
-      paddingBottom: mobileIeltsFab && !activeTimer
-        ? "calc(var(--space-lg) + 56px + env(safe-area-inset-bottom, 0px))"
+      paddingTop: mobileIeltsFab
+        ? "calc(var(--space-md) + env(safe-area-inset-top, 0px))"
         : "var(--space-lg)",
+      paddingLeft: mobileIeltsFab
+        ? "calc(14px + env(safe-area-inset-left, 0px))"
+        : "var(--space-lg)",
+      paddingRight: mobileIeltsFab
+        ? "calc(14px + env(safe-area-inset-right, 0px))"
+        : "var(--space-lg)",
+      paddingBottom: mobileIeltsFab && !activeTimer
+        ? "calc(var(--space-lg) + 64px + env(safe-area-inset-bottom, 0px))"
+        : mobileIeltsFab
+          ? "calc(var(--space-lg) + env(safe-area-inset-bottom, 0px))"
+          : "var(--space-lg)",
       animation: penaltyModeActive ? "penaltyShake 0.8s ease" : missionCompleteEffect ? "screenShake 0.5s ease" : "none",
       transition: "background 0.5s ease",
     }}>
@@ -2277,19 +2476,24 @@ export default function Home() {
         <div style={{
           display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "clamp(0.65rem, 2.2vw, 0.75rem)",
           background: "rgba(0,0,0,0.45)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-          padding: "10px 14px", margin: "8px", borderRadius: "8px",
+          padding: "10px 14px",
+          margin: mobileIeltsFab ? "max(6px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 8px max(8px, env(safe-area-inset-left, 0px))" : "8px",
+          maxWidth: mobileIeltsFab ? "min(calc(100vw - 16px), 340px)" : undefined,
+          flexWrap: mobileIeltsFab ? "wrap" : "nowrap",
+          justifyContent: mobileIeltsFab ? "flex-end" : undefined,
+          borderRadius: "8px",
           boxShadow: "0 2px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)",
           border: "1px solid rgba(255,255,255,0.1)",
         }}>
           {user ? (
             <>
-              <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: "100px", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1 }} title={user.email ?? undefined}>{user.email ?? user.id.slice(0, 8)}</span>
+              <span style={{ color: "var(--text-muted)", letterSpacing: "1px", maxWidth: mobileIeltsFab ? "min(200px, 55vw)" : "100px", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1 }} title={user.email ?? undefined}>{user.email ?? user.id.slice(0, 8)}</span>
               <button
                 type="button"
                 onClick={async () => { await getSupabase()?.auth.signOut(); }}
                 style={{
-                  padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", color: "var(--text-muted)",
-                  borderRadius: "6px", cursor: "pointer", letterSpacing: "1px", flexShrink: 0,
+                  padding: mobileIeltsFab ? "10px 14px" : "6px 12px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)", color: "var(--text-muted)",
+                  borderRadius: "6px", cursor: "pointer", letterSpacing: "1px", flexShrink: 0, touchAction: "manipulation",
                 }}
               >
                 Sign out
@@ -2304,11 +2508,11 @@ export default function Home() {
                 await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined } });
               }}
               style={{
-                padding: "6px 12px", border: "1px solid rgba(58,122,212,0.5)", background: "rgba(58,122,212,0.2)", color: "var(--accent-blue)",
-                borderRadius: "6px", cursor: "pointer", letterSpacing: "1px",
+                padding: mobileIeltsFab ? "10px 12px" : "6px 12px", border: "1px solid rgba(58,122,212,0.5)", background: "rgba(58,122,212,0.2)", color: "var(--accent-blue)",
+                borderRadius: "6px", cursor: "pointer", letterSpacing: mobileIeltsFab ? "0.5px" : "1px", touchAction: "manipulation", lineHeight: 1.25,
               }}
             >
-              Sign in with Google
+              {mobileIeltsFab ? "Google 登入" : "Sign in with Google"}
             </button>
           )}
         </div>,
@@ -2431,8 +2635,12 @@ export default function Home() {
         .completed-item-in{animation:completedItemIn 0.3s ease forwards}
         .glow-breath{animation:glowBreath 3s ease-in-out infinite}
         @media (max-width: 768px){
-          .dashboard-grid{grid-template-columns:1fr !important;}
+          .dashboard-grid{grid-template-columns:1fr !important;gap:18px !important;}
           .analytics-stat-grid{grid-template-columns:repeat(2,1fr) !important;}
+          .sl-system-msg{flex-wrap:wrap;word-break:break-word;min-height:0;}
+          .sl-footer-bar{flex-direction:column;align-items:stretch;gap:12px;}
+          .sl-bgm-row{width:100%;justify-content:center;}
+          .sl-task-tabs button{font-size:0.62rem !important;letter-spacing:0.08em !important;padding:12px 8px !important;}
         }
       `}</style>
 
@@ -2588,9 +2796,9 @@ export default function Home() {
           <div style={{marginBottom:"var(--space-md)",padding:"var(--space-sm) var(--space-lg)",borderRadius:"var(--radius-md)",
             background:"var(--debuff-bg)",border:"1px solid var(--debuff-border)",
             display:"flex",alignItems:"center",justifyContent:"space-between",gap:"var(--space-md)",flexWrap:"wrap"}}>
-            <div style={{display:"flex",alignItems:"center",gap:"var(--space-sm)"}}>
-              <span style={{fontSize:"1.2rem"}}>⚠️</span>
-              <span style={{color:"var(--debuff-text)",fontSize:"0.75rem",letterSpacing:"2px",fontWeight:"700"}}>SYSTEM WARNING · 超過 24 小時未完成任務 · 觸發 EMERGENCY QUEST</span>
+            <div style={{display:"flex",alignItems:"center",gap:"var(--space-sm)",minWidth:0}}>
+              <span style={{fontSize:"1.2rem",flexShrink:0}}>⚠️</span>
+              <span style={{color:"var(--debuff-text)",fontSize:"0.75rem",letterSpacing:"2px",fontWeight:"700",minWidth:0,lineHeight:1.35}}>SYSTEM WARNING · 超過 24 小時未完成任務 · 觸發 EMERGENCY QUEST</span>
             </div>
             <button onClick={() => { sound.playClick(); setMeta({ ...getMeta(), emergencyDismissedDate: getToday() }); setEmergencyDismissedForToday(true); }}
               style={{background:"var(--bg-panel)",border:"1px solid var(--debuff-border)",borderRadius:"var(--radius-sm)",padding:"var(--space-xs) var(--space-sm)",color:"var(--text-primary)",fontSize:"0.6rem",letterSpacing:"1px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
@@ -2610,15 +2818,15 @@ export default function Home() {
             </div>
           </div>
           {/* 系統狀態跑馬燈 */}
-          <div style={{marginTop:"10px",padding:"8px 12px",background:"rgba(16,25,53,0.5)",borderRadius:"6px",
-            border:"1px solid rgba(58,122,212,0.15)",fontSize:"0.55rem",color:"rgba(125,211,252,0.8)",
-            letterSpacing:"2px",fontFamily:"var(--font-system)",minHeight:"28px",display:"flex",alignItems:"center"}}>
+          <div className="sl-system-msg" style={{marginTop:"10px",padding:"8px 12px",background:"rgba(16,25,53,0.5)",borderRadius:"6px",
+            border:"1px solid rgba(58,122,212,0.15)",fontSize: mobileIeltsFab ? "0.52rem" : "0.55rem",color:"rgba(125,211,252,0.8)",
+            letterSpacing: mobileIeltsFab ? "1px" : "2px",fontFamily:"var(--font-system)",minHeight:"28px",display:"flex",alignItems:"center"}}>
             <span style={{animation:"blink 2s ease-in-out infinite"}}>■</span>
             <span style={{marginLeft:"8px"}}>{systemMessageFromState}</span>
           </div>
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginBottom:"var(--space-xl)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:"var(--space-lg)"}}>
+          <div className="sl-bgm-row" style={{display:"flex",alignItems:"center",gap: mobileIeltsFab ? "10px" : "var(--space-lg)",flexWrap:"wrap"}}>
             <button onClick={()=>{
               sound.playClick();
               const a = audioRef.current;
@@ -2633,19 +2841,19 @@ export default function Home() {
             }} style={{
               background:"transparent",
               border:`1px solid ${isPlaying ? "var(--border-glow)" : "var(--border-subtle)"}`,
-              borderRadius:"var(--radius-sm)",padding:"var(--space-xs) var(--space-sm)",
+              borderRadius:"var(--radius-sm)",padding: mobileIeltsFab ? "10px 14px" : "var(--space-xs) var(--space-sm)",
               color:isPlaying ? "var(--accent-blue-glow)" : "var(--accent-blue)",
               fontSize:"0.55rem",letterSpacing:"2px",cursor:"pointer",fontFamily:"inherit",
-              boxShadow:isPlaying ? "var(--glow-card)" : "none",transition:"all var(--anim-normal)"}}>
+              boxShadow:isPlaying ? "var(--glow-card)" : "none",transition:"all var(--anim-normal)",touchAction:"manipulation",minHeight: mobileIeltsFab ? 44 : undefined}}>
               {isPlaying?"⏸ BGM":"♪ BGM"}
             </button>
             <button onClick={()=>{ sound.playClick(); systemVoice.setVoiceEnabled(!systemVoice.voiceEnabled); }} style={{
               background:"transparent",
               border:`1px solid ${systemVoice.voiceEnabled ? "var(--border-glow)" : "var(--border-subtle)"}`,
-              borderRadius:"var(--radius-sm)",padding:"var(--space-xs) var(--space-sm)",
+              borderRadius:"var(--radius-sm)",padding: mobileIeltsFab ? "10px 14px" : "var(--space-xs) var(--space-sm)",
               color:systemVoice.voiceEnabled ? "var(--accent-blue-glow)" : "var(--accent-blue)",
               fontSize:"0.55rem",letterSpacing:"2px",cursor:"pointer",fontFamily:"inherit",
-              boxShadow:systemVoice.voiceEnabled ? "var(--glow-card)" : "none",transition:"all var(--anim-normal)"}} title="System voice announcements">
+              boxShadow:systemVoice.voiceEnabled ? "var(--glow-card)" : "none",transition:"all var(--anim-normal)",touchAction:"manipulation",minHeight: mobileIeltsFab ? 44 : undefined}} title="System voice announcements">
               {systemVoice.voiceEnabled ? "🔊 VOICE" : "🔇 VOICE"}
             </button>
           </div>
@@ -2735,27 +2943,7 @@ export default function Home() {
                 <div style={{color:"#7A9ABB",fontSize:"0.6rem",letterSpacing:"2px"}}>HO KAM YUEN · TOMMY</div>
               </div>
 
-              <div style={{marginBottom:"16px"}}>
-                <div style={{color:"#7A9ABB",fontSize:"0.55rem",letterSpacing:"3px",marginBottom:"12px"}}>ATTRIBUTES</div>
-                {attrs.map(a => (
-                  <div key={a!.key} style={{marginBottom:"10px"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-                      <span style={{color:"#A0BCD4",fontSize:"0.65rem"}}>{a!.desc}</span>
-                      <CountUp target={a!.value} color={a!.value>0?"#3A7AD4":"#7A9ABB"} duration={800}/>
-                    </div>
-                    <div style={{background:"rgba(255,255,255,0.06)",borderRadius:"2px",height:"3px"}}>
-                      <div style={{
-                        background:a!.value>0?"linear-gradient(90deg,#1a4a7a,#3A7AD4)":"transparent",
-                        width:`${a!.value}%`,height:"100%",borderRadius:"2px",
-                        transition:"width 1s ease",
-                        boxShadow:a!.value>0?"0 0 6px rgba(58,122,212,0.5)":"none"
-                      }}/>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{borderTop:"1px solid rgba(58,122,212,0.15)",paddingTop:"14px",marginBottom:"12px"}}>
+              <div style={{borderTop:"1px solid rgba(58,122,212,0.15)",paddingTop:"14px",marginBottom:"12px",marginTop:"4px"}}>
                 <div style={{color:"#7A9ABB",fontSize:"0.55rem",letterSpacing:"2px",marginBottom:"6px"}}>NEXT MILESTONE</div>
                 <div style={{color:rc.color,fontSize:"0.7rem",letterSpacing:"1px"}}>{rc.next}</div>
               </div>
@@ -2793,29 +2981,6 @@ export default function Home() {
                 <div style={{color:"#3A5070",fontSize:"0.5rem",marginTop:"4px",textAlign:"right"}}>
                   {streak>=30?"MAX STREAK 🏆":`${30-streak} days to UNBREAKABLE`}
                 </div>
-              </div>
-
-              {/* Shadow Army：影子槽（streak 每 7 日解鎖 1 隻） */}
-              <div style={{marginTop:"12px",padding:"12px",borderRadius:"8px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(136,136,136,0.2)"}}
-                title={shadowSoldiersFromStreak > 0 ? `已解鎖：${SHADOW_NAMES.slice(0, shadowSoldiersFromStreak).join(" · ")}` : undefined}>
-                <div style={{color:"#7A9ABB",fontSize:"0.55rem",letterSpacing:"2px",marginBottom:"8px"}}>SHADOW ARMY</div>
-                <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"6px"}}>
-                  {[1,2,3,4,5].map(slot => {
-                    const unlocked = shadowSoldiersFromStreak >= slot;
-                    return (
-                      <div key={slot} style={{
-                        width:"28px",height:"28px",borderRadius:"6px",
-                        background: unlocked ? "linear-gradient(180deg,#1a1a2e,#0d0d14)" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${unlocked ? "rgba(136,136,136,0.5)" : "rgba(255,255,255,0.08)"}`,
-                        display:"flex",alignItems:"center",justifyContent:"center",
-                        boxShadow: unlocked ? "inset 0 0 12px rgba(0,0,0,0.8), 0 0 8px rgba(100,100,120,0.2)" : "none",
-                      }} title={unlocked ? SHADOW_NAMES[slot - 1] : "未解鎖"}>
-                        {unlocked ? <span style={{fontSize:"0.65rem",opacity:0.9}}>◆</span> : <span style={{fontSize:"0.5rem",color:"#3A5070"}}>?</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="font-mono-num" style={{color:"#3A5070",fontSize:"0.5rem"}}>{shadowSoldiersFromStreak} / 5 soldiers</div>
               </div>
             </div>
           </div>
@@ -2882,18 +3047,20 @@ export default function Home() {
               ))}
             </div>
 
-            <div id="sl-main-tasks-anchor" style={{display:"flex",gap:"4px",marginBottom:"20px",
+            <div id="sl-main-tasks-anchor" className="sl-task-tabs" style={{display:"flex",gap:"4px",marginBottom:"20px",
               background:"rgba(58,122,212,0.06)",borderRadius:"10px",padding:"5px",
               border:"1px solid rgba(58,122,212,0.1)",scrollMarginTop:"12px"}}>
-              {(["tasks","summary","analytics"] as const).map(t => (
+              {(["tasks","analytics"] as const).map(t => (
                 <button key={t} onClick={()=>{ sound.playClick(); setTab(t); }} style={{
                   flex:1,padding:"10px 12px",borderRadius:"8px",border:"none",cursor:"pointer",
                   background:tab===t?"rgba(58,122,212,0.25)":"transparent",
                   color:tab===t?"#A5D4F7":"#8AB0CC",
                   fontSize:"0.7rem",letterSpacing:"2.5px",fontWeight:600,fontFamily:"inherit",transition:"all 0.3s ease",
-                  boxShadow:tab===t?"0 0 16px rgba(58,122,212,0.25)":"none",
+                  boxShadow:tab===t?"0 0 16px rgba(58,122,212,0.25)":"none",touchAction:"manipulation",
                 }}>
-                  {t==="tasks"?"DAILY TASKS":t==="summary"?"SUMMARY":"ANALYTICS"}
+                  {mobileIeltsFab
+                    ? (t === "tasks" ? "每日任務" : "分析")
+                    : (t==="tasks"?"DAILY TASKS":"ANALYTICS")}
                 </button>
               ))}
             </div>
@@ -2901,10 +3068,11 @@ export default function Home() {
             {tab==="tasks" && (() => {
                 const topPriorityQuests = [...questsBase.filter(q => q.type === "challenge")].sort((a, b) => b.exp - a.exp).slice(0, 3);
                 const dailySystemQuests = [...questsBase.filter(q => q.type === "daily")].sort((a, b) => b.exp - a.exp);
+                const hidUi = new Set(hiddenQuestIds);
                 const supportQuests = [
                   ...questsBase.filter(q => q.type === "hidden"),
-                  ...(dailyRandomHiddenQuest ? [dailyRandomHiddenQuest] : []),
-                  ...aiQuests,
+                  ...(dailyRandomHiddenQuest && !hidUi.has(dailyRandomHiddenQuest.id) ? [dailyRandomHiddenQuest] : []),
+                  ...aiQuests.filter((q) => !hidUi.has(q.id)),
                 ].sort((a, b) => b.exp - a.exp);
                 return (
               <div style={{animation:"fadeUp 0.35s ease forwards"}}>
@@ -2929,96 +3097,269 @@ export default function Home() {
                             onClickSound={sound.playClick}
                             idx={idx}
                             priority
+                            primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
                           />
                         </div>
                       ))}
                   </div>
                 </div>
 
-                {/* DAILY SYSTEM TASKS — energy teal, consistent cards */}
-                <div style={{marginBottom:"24px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}>
-                    <div style={{width:"3px",height:"14px",background:"#4A9A8A",borderRadius:"2px",boxShadow:"0 0 8px #4A9A8A"}}/>
-                    <span style={{color:"#4A9A8A",fontSize:"0.68rem",letterSpacing:"3px",fontWeight:700}}>DAILY SYSTEM TASKS</span>
-                  </div>
-                  <div style={{color:"#5A7A9A",fontSize:"0.55rem",letterSpacing:"1px",marginBottom:"10px"}}>每日習慣 · 維持系統穩定</div>
-                  {dailySystemQuests.map((q, idx) => {
-                    const evolved = (streak>=3 && q.id===1) ? "基礎體能恢復 II：各項 120 下" : (streak>=3 && q.id===2) ? "基礎耐力訓練 II：6 公里/600 下" : undefined;
+                {(() => {
+                  const customBossQuests = questsBase.filter((q) => q.type === "boss" && q.id >= CUSTOM_QUEST_MIN_ID);
+                  const customEmergencyQuests = questsBase.filter((q) => q.type === "emergency");
+                  const openAdd = (zone: TaskSectionId) => {
+                    sound.playClick();
+                    setAddQuestZone(zone);
+                    setAddQuestLabel("");
+                    setAddQuestExp("15");
+                    setAddQuestMinutes(zone === "boss" ? "60" : "25");
+                    setAddQuestAttr("EXE");
+                    setAddQuestMode("timer");
+                  };
+                  const sectionDrop = (sid: TaskSectionId) => ({
+                    onDragOver: (e: DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; },
+                    onDrop: (e: DragEvent) => {
+                      e.preventDefault();
+                      const dragId = e.dataTransfer.getData("application/x-sl-section") as TaskSectionId;
+                      if (!dragId || dragId === sid) return;
+                      setSectionOrder((prev) => {
+                        const rest = prev.filter((x) => x !== dragId);
+                        const ti = rest.indexOf(sid);
+                        if (ti < 0) return prev;
+                        return [...rest.slice(0, ti), dragId, ...rest.slice(ti)];
+                      });
+                    },
+                  });
+                  const sectionHeader = (sid: TaskSectionId, bar: string, title: string, sub: string, accent: string) => {
+                    const collapsed = !!sectionCollapsed[sid];
                     return (
-                      <QuestCard
-                        key={q.id}
-                        quest={q}
-                        optionalDisplayLabel={evolved}
-                        accentColor="#4A9A8A"
-                        done={completed.includes(q.id)}
-                        onStart={()=>toggle(q.id)}
-                        onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
-                        onSettings={() => openQuestSettings(q)}
-                        onHoverSound={sound.playHover}
-                        onClickSound={sound.playClick}
-                        idx={idx}
-                      />
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "10px 12px",
+                          background: `${accent}14`,
+                          cursor: "pointer",
+                          userSelect: "none",
+                        }}
+                        onClick={() => setSectionCollapsed((p) => ({ ...p, [sid]: !p[sid] }))}
+                      >
+                        <span
+                          draggable
+                          onDragStart={(e: DragEvent) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData("application/x-sl-section", sid);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ cursor: "grab", opacity: 0.65, fontSize: "0.7rem", padding: "4px 2px" }}
+                          title="拖曳區塊排序"
+                        >
+                          ⋮⋮
+                        </span>
+                        <div style={{ width: 3, height: 14, background: bar, borderRadius: 2, boxShadow: `0 0 8px ${bar}` }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: accent, fontSize: "0.68rem", letterSpacing: "0.18em", fontWeight: 700 }}>{title}</div>
+                          <div style={{ color: "#5A6A7A", fontSize: "0.52rem", letterSpacing: "0.06em", marginTop: 2 }}>{sub}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openAdd(sid); }}
+                          style={{
+                            flexShrink: 0,
+                            padding: "6px 10px",
+                            borderRadius: 8,
+                            border: `1px solid ${accent}55`,
+                            background: "rgba(0,0,0,0.28)",
+                            color: "#C8E0F0",
+                            fontSize: "0.58rem",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          + 新增
+                        </button>
+                        <span style={{ color: "#7A9ABB", fontSize: "0.72rem", flexShrink: 0 }}>{collapsed ? "▼" : "▲"}</span>
+                      </div>
                     );
-                  })}
-                </div>
-
-                {/* SUPPORT MISSIONS — muted blue */}
-                {supportQuests.length > 0 && (
-                  <div style={{marginBottom:"24px"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}>
-                      <div style={{width:"3px",height:"14px",background:"#6B8AAF",borderRadius:"2px",boxShadow:"0 0 6px #6B8AAF"}}/>
-                      <span style={{color:"#6B8AAF",fontSize:"0.65rem",letterSpacing:"3px",fontWeight:600}}>SUPPORT MISSIONS</span>
-                    </div>
-                    <div style={{color:"#5A6A7A",fontSize:"0.52rem",letterSpacing:"1px",marginBottom:"10px"}}>輔助任務 · 不分散高優先事項</div>
-                    {supportQuests.map((q, idx) => (
-                      <QuestCard
-                        key={`support-${q.id}-${idx}`}
-                        quest={q}
-                        accentColor="#6B8AAF"
-                        done={completed.includes(q.id)}
-                        onStart={()=>toggle(q.id)}
-                        onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
-                        onSettings={() => openQuestSettings(q)}
-                        onHoverSound={sound.playHover}
-                        onClickSound={sound.playClick}
-                        isAi={aiQuests.some(a=>a.id===q.id)}
-                        idx={idx}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Boss Raid */}
-                {weeklyBoss && (
-                  <div style={{marginBottom:"20px"}}>
-                    <div style={{marginBottom:"10px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                        <div style={{width:"3px",height:"14px",background:"#E74C3C",borderRadius:"2px",boxShadow:"0 0 8px #E74C3C"}}/>
-                        <span style={{color:"#E74C3C",fontSize:"0.68rem",letterSpacing:"3px",fontWeight:700}}>BOSS RAID</span>
-                      </div>
-                      <div style={{color:"#6A8AAA",fontSize:"0.55rem",letterSpacing:"1px",marginTop:"4px"}}>地下城首領戰 · 深度消耗</div>
-                    </div>
-                    <div style={{border:"2px solid rgba(231,76,60,0.5)",borderRadius:"12px",padding:"2px",background:"rgba(231,76,60,0.06)",boxShadow:"0 0 20px rgba(231,76,60,0.15)"}}>
-                      <QuestCard quest={weeklyBoss} accentColor="#E74C3C" done={false} onStart={()=>setActiveTimer(weeklyBoss)} onUndo={()=>{}} onHoverSound={sound.playHover} onClickSound={sound.playClick} />
-                    </div>
-                  </div>
-                )}
-
-                {/* Emergency Quest */}
-                {emergencyActive && (
-                  <div style={{marginBottom:"20px"}}>
-                    <div style={{marginBottom:"10px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                        <div style={{width:"3px",height:"14px",background:"#F39C12",borderRadius:"2px",boxShadow:"0 0 8px #F39C12"}}/>
-                        <span style={{color:"#F39C12",fontSize:"0.68rem",letterSpacing:"3px",fontWeight:700}}>EMERGENCY QUEST</span>
-                      </div>
-                      <div style={{color:"#8A7A5A",fontSize:"0.55rem",letterSpacing:"1px",marginTop:"4px"}}>緊急任務 · 環境整理</div>
-                    </div>
-                    {EMERGENCY_QUESTS.map((q, idx) => (
-                      <QuestCard key={q.id} quest={q} accentColor="#F39C12" done={completed.includes(q.id)} onStart={()=>toggle(q.id)} onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))} onHoverSound={sound.playHover} onClickSound={sound.playClick} idx={idx} />
-                    ))}
-                  </div>
-                )}
+                  };
+                  return sectionOrder.map((sid) => {
+                    const wrap = (inner: ReactNode, bar: string, title: string, sub: string, accent: string) => {
+                      const collapsed = !!sectionCollapsed[sid];
+                      return (
+                        <div
+                          key={sid}
+                          style={{
+                            marginBottom: 18,
+                            borderRadius: 12,
+                            border: `1px solid ${accent}35`,
+                            overflow: "hidden",
+                            background: "rgba(0,0,0,0.18)",
+                          }}
+                          {...sectionDrop(sid)}
+                        >
+                          {sectionHeader(sid, bar, title, sub, accent)}
+                          {!collapsed && <div style={{ padding: "12px 10px 14px" }}>{inner}</div>}
+                        </div>
+                      );
+                    };
+                    if (sid === "daily") {
+                      return wrap(
+                        <>
+                          {dailySystemQuests.length === 0 ? (
+                            <div style={{ color: "#5A6A7A", fontSize: "0.65rem", padding: "8px 4px" }}>尚無每日任務 · 點「+ 新增」建立自訂任務</div>
+                          ) : null}
+                          {dailySystemQuests.map((q, idx) => {
+                            const evolved = (streak>=3 && q.id===1) ? "基礎體能恢復 II：各項 120 下" : (streak>=3 && q.id===2) ? "基礎耐力訓練 II：6 公里/600 下" : undefined;
+                            return (
+                              <QuestCard
+                                key={q.id}
+                                quest={q}
+                                optionalDisplayLabel={evolved}
+                                accentColor="#4A9A8A"
+                                done={completed.includes(q.id)}
+                                onStart={()=>toggle(q.id)}
+                                onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
+                                onSettings={() => openQuestSettings(q)}
+                                onDelete={q.id >= CUSTOM_QUEST_MIN_ID ? () => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id)) : undefined}
+                                onHoverSound={sound.playHover}
+                                onClickSound={sound.playClick}
+                                idx={idx}
+                                primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                              />
+                            );
+                          })}
+                        </>,
+                        "#4A9A8A",
+                        "DAILY SYSTEM TASKS",
+                        "每日習慣 · 收合標題列 · 左側 ⋮⋮ 拖曳調整區塊順序",
+                        "#4A9A8A",
+                      );
+                    }
+                    if (sid === "support") {
+                      return wrap(
+                        <>
+                          {supportQuests.length === 0 ? (
+                            <div style={{ color: "#5A6A7A", fontSize: "0.65rem", padding: "8px 4px" }}>尚無支援任務 · 點「+ 新增」加入自訂輔助任務</div>
+                          ) : null}
+                          {supportQuests.map((q, idx) => (
+                            <QuestCard
+                              key={`support-${q.id}-${idx}`}
+                              quest={q}
+                              accentColor="#6B8AAF"
+                              done={completed.includes(q.id)}
+                              onStart={()=>toggle(q.id)}
+                              onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
+                              onSettings={() => openQuestSettings(q)}
+                              onDelete={q.id >= CUSTOM_QUEST_MIN_ID ? () => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id)) : undefined}
+                              onHoverSound={sound.playHover}
+                              onClickSound={sound.playClick}
+                              isAi={aiQuests.some(a=>a.id===q.id)}
+                              idx={idx}
+                              primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                            />
+                          ))}
+                        </>,
+                        "#6B8AAF",
+                        "SUPPORT MISSIONS",
+                        "輔助任務 · 可與 AI 建議並列",
+                        "#6B8AAF",
+                      );
+                    }
+                    if (sid === "boss") {
+                      return wrap(
+                        <>
+                          {!weeklyBoss && customBossQuests.length === 0 ? (
+                            <div style={{ color: "#6A8AAA", fontSize: "0.65rem", padding: "8px 4px" }}>本週尚未抽選 Raid 或尚無自訂 Boss 任務</div>
+                          ) : null}
+                          {weeklyBoss ? (
+                            <div style={{ border: "2px solid rgba(231,76,60,0.5)", borderRadius: 12, padding: 2, marginBottom: 10, background: "rgba(231,76,60,0.06)", boxShadow: "0 0 20px rgba(231,76,60,0.15)" }}>
+                              <QuestCard
+                                quest={weeklyBoss}
+                                accentColor="#E74C3C"
+                                done={false}
+                                onStart={() => setActiveTimer(weeklyBoss)}
+                                onUndo={() => {}}
+                                onHoverSound={sound.playHover}
+                                onClickSound={sound.playClick}
+                                primaryActionLabel="開始計時"
+                              />
+                            </div>
+                          ) : null}
+                          {customBossQuests.map((q, idx) => (
+                            <QuestCard
+                              key={q.id}
+                              quest={q}
+                              accentColor="#E74C3C"
+                              done={completed.includes(q.id)}
+                              onStart={() => toggle(q.id)}
+                              onUndo={() => setCompleted(completed.filter((x) => x !== q.id))}
+                              onSettings={() => openQuestSettings(q)}
+                              onDelete={() => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id))}
+                              onHoverSound={sound.playHover}
+                              onClickSound={sound.playClick}
+                              idx={idx}
+                              primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                            />
+                          ))}
+                        </>,
+                        "#E74C3C",
+                        "BOSS RAID",
+                        "週常首領（計時）＋自訂 Boss（可計時或一鍵）",
+                        "#E74C3C",
+                      );
+                    }
+                    if (sid === "emergency") {
+                      return wrap(
+                        <>
+                          {!emergencyActive && customEmergencyQuests.length === 0 ? (
+                            <div style={{ color: "#8A7A5A", fontSize: "0.65rem", padding: "8px 4px" }}>目前無系統緊急任務 · 仍可新增自訂緊急項</div>
+                          ) : null}
+                          {customEmergencyQuests.map((q, idx) => (
+                            <QuestCard
+                              key={q.id}
+                              quest={q}
+                              accentColor="#F39C12"
+                              done={completed.includes(q.id)}
+                              onStart={() => toggle(q.id)}
+                              onUndo={() => setCompleted(completed.filter((x) => x !== q.id))}
+                              onSettings={() => openQuestSettings(q)}
+                              onDelete={() => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id))}
+                              onHoverSound={sound.playHover}
+                              onClickSound={sound.playClick}
+                              idx={idx}
+                              primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                            />
+                          ))}
+                          {emergencyActive
+                            ? EMERGENCY_QUESTS.filter((q) => !hiddenQuestIds.includes(q.id)).map((q, idx) => (
+                                <QuestCard
+                                  key={q.id}
+                                  quest={q}
+                                  accentColor="#F39C12"
+                                  done={completed.includes(q.id)}
+                                  onStart={() => toggle(q.id)}
+                                  onUndo={() => setCompleted(completed.filter((x) => x !== q.id))}
+                                  onSettings={() => openQuestSettings(q)}
+                                  onHoverSound={sound.playHover}
+                                  onClickSound={sound.playClick}
+                                  idx={idx}
+                                  primaryActionLabel="一鍵完成"
+                                />
+                              ))
+                            : null}
+                        </>,
+                        "#F39C12",
+                        "EMERGENCY QUEST",
+                        "系統觸發為一鍵完成；自訂可選計時或一鍵",
+                        "#F39C12",
+                      );
+                    }
+                    return null;
+                  });
+                })()}
 
                 {/* DANGER ZONE — penalty, warning red, danger icon */}
                 <div style={{marginBottom:"20px"}}>
@@ -3056,7 +3397,7 @@ export default function Home() {
                           boxShadow:isActive?"0 0 8px rgba(231,76,60,0.4)":"none"}}>
                           {isActive && <span style={{color:"#E74C3C",fontSize:"11px",fontWeight:"700"}}>✓</span>}
                         </div>
-                        <span style={{flex:1,color:"#C8DCF0",fontSize:"0.85rem",fontWeight:500}}>{d.label}</span>
+                        <span style={{flex:1,color:"#C8DCF0",fontSize:"0.85rem",fontWeight:500,minWidth:0}}>{d.label}</span>
                         {isActive ? (
                           <span style={{color:"#8B6A6A",fontSize:"0.6rem",letterSpacing:"1px",marginRight:"8px"}}>已套用 · 翌日 00:00 重置</span>
                         ) : null}
@@ -3083,15 +3424,19 @@ export default function Home() {
                     backdropFilter: "blur(10px)",
                     WebkitBackdropFilter: "blur(10px)",
                     display: "flex",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     justifyContent: "center",
-                    padding: "18px",
+                    padding: "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
+                    overflowY: "auto",
+                    WebkitOverflowScrolling: "touch",
                   }}
                 >
                   <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
-                      width: "min(680px, 96vw)",
+                      width: "min(680px, 100%)",
+                      maxHeight: "min(88dvh, 720px)",
+                      overflowY: "auto",
                       borderRadius: "14px",
                       border: "1px solid rgba(56,189,248,0.35)",
                       background: "rgba(15,23,42,0.95)",
@@ -3099,6 +3444,8 @@ export default function Home() {
                       padding: "18px",
                       color: "#E0F2FE",
                       fontFamily: "var(--font-ui)",
+                      marginTop: "clamp(8px, 3vh, 32px)",
+                      marginBottom: "24px",
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
@@ -3184,13 +3531,32 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "16px", flexWrap: "wrap" }}>
+                  <p style={{ margin: "12px 0 0", fontSize: "0.58rem", color: "#64748B", lineHeight: 1.45 }}>
+                    刪除任務：自訂任務會直接移除；其餘任務會從清單隱藏並一併取消今日完成狀態（設定存於本機／已登入時同步雲端）。
+                  </p>
+
+                  <div style={{ display: "flex", gap: "10px", justifyContent: "space-between", alignItems: "center", marginTop: "16px", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                     <button
                       type="button"
                       onClick={() => {
-                        const next = { ...questOverrides };
-                        delete next[editingQuestId];
-                        saveQuestOverrides(next);
+                        if (editingQuestId == null) return;
+                        sound.playClick();
+                        if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
+                          setCustomQuests((prev) => prev.filter((c) => c.id !== editingQuestId));
+                        } else {
+                          setHiddenQuestIds((prev) => {
+                            if (prev.includes(editingQuestId)) return prev;
+                            const n = [...prev, editingQuestId];
+                            try {
+                              localStorage.setItem(HIDDEN_QUEST_IDS_KEY, JSON.stringify(n));
+                            } catch {
+                              /* */
+                            }
+                            return n;
+                          });
+                        }
+                        setCompleted((prev) => prev.filter((x) => x !== editingQuestId));
                         setQuestSettingsOpen(false);
                       }}
                       style={{
@@ -3201,18 +3567,64 @@ export default function Home() {
                         borderRadius: "10px",
                         cursor: "pointer",
                         fontWeight: 700,
-                        letterSpacing: "0.14em",
-                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
                         fontSize: "0.65rem",
                       }}
                     >
-                      Reset
+                      刪除任務
                     </button>
+                    {editingQuestId != null &&
+                      editingQuestId < CUSTOM_QUEST_MIN_ID &&
+                      QUESTS.some((q) => q.id === editingQuestId) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editingQuestId == null) return;
+                            sound.playClick();
+                            const next = { ...questOverrides };
+                            delete next[editingQuestId];
+                            saveQuestOverrides(next);
+                            setQuestSettingsOpen(false);
+                          }}
+                          style={{
+                            border: "1px solid rgba(148,163,184,0.45)",
+                            background: "rgba(255,255,255,0.05)",
+                            color: "#CBD5E1",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            cursor: "pointer",
+                            fontWeight: 700,
+                            letterSpacing: "0.06em",
+                            fontSize: "0.65rem",
+                          }}
+                        >
+                          還原預設
+                        </button>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
+                        if (editingQuestId == null) return;
+                        sound.playClick();
                         const mins = Math.max(1, Math.min(240, Number.parseInt(editingMinutes, 10) || 0));
                         const exp = Math.max(0, Math.min(9999, Number.parseInt(editingExp, 10) || 0));
+                        if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
+                          setCustomQuests((prev) =>
+                            prev.map((c) =>
+                              c.id === editingQuestId
+                                ? {
+                                    ...c,
+                                    label: editingLabel.trim() || c.label,
+                                    minutes: Number.isFinite(mins) ? mins : c.minutes,
+                                    exp: Number.isFinite(exp) ? exp : c.exp,
+                                  }
+                                : c,
+                            ),
+                          );
+                          setQuestSettingsOpen(false);
+                          return;
+                        }
                         const next = {
                           ...questOverrides,
                           [editingQuestId]: {
@@ -3246,210 +3658,229 @@ export default function Home() {
               )
             }
 
-            {tab==="summary" && (
-              <div className="summary-card-in" style={{display:"flex",flexDirection:"column",gap:"20px",opacity:0}}>
-                {/* 橫向 HUD 標籤 — 玻璃擬態 */}
-                <div style={{display:"flex",flexWrap:"wrap",gap:"10px",marginBottom:"4px"}}>
-                  {[
-                    {label:"RANK", value:rank+"-RANK", color:rc.color},
-                    {label:"EXP", value:null as number|null, color:"#7AC0F4", num:totalExp},
-                    {label:"DONE", value:null as number|null, color:"#3A7AD4", num:completed.length},
-                    {label:"STREAK", value:null as number|null, color:getStreakColor(streak), num:streak},
-                  ].map((s,i)=>(<div key={s.label} style={{
-                    animation:"summarySectionIn 0.5s ease forwards",
-                    animationDelay:`${i*0.06}s`,
-                    opacity:0,
-                    padding:"8px 14px",borderRadius:"10px",
-                    background:"rgba(12,24,48,0.6)",backdropFilter:"blur(8px)",
-                    border:`1px solid ${s.color}40`,boxShadow:`0 0 20px ${s.color}15, inset 0 1px 0 rgba(255,255,255,0.04)`,
-                    display:"flex",alignItems:"center",gap:"8px",
-                  }}>
-                    <span style={{color:"#6B8AAF",fontSize:"0.5rem",letterSpacing:"2.5px",fontWeight:600}}>{s.label}</span>
-                    <span style={{color:s.color,fontSize:"0.9rem",fontWeight:700}}>
-                      {s.value!=null ? s.value : <CountUp target={s.num!} color={s.color} duration={400}/>}
-                      {s.label==="STREAK" && streak>0 && " 🔥"}
-                    </span>
-                  </div>))}
-                </div>
-
-                {/* COMPLETED TODAY — 任務日誌 / 數據流風格 */}
-                {completedTodayList.length>0 && (
-                  <div style={{
-                    animation:"summarySectionIn 0.55s ease forwards",
-                    animationDelay:"0.12s",
-                    opacity:0,
-                    position:"relative",
-                    background:"linear-gradient(135deg, rgba(34,197,94,0.06) 0%, rgba(12,24,48,0.85) 50%)",
-                    border:"1px solid rgba(34,197,94,0.25)",
-                    borderRadius:"14px",
-                    padding:"18px 20px",
-                    boxShadow:"0 0 30px rgba(34,197,94,0.08), inset 0 1px 0 rgba(255,255,255,0.04)",
-                    overflow:"hidden",
-                  }}>
-                    <div style={{position:"absolute",inset:0,background:"repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(34,197,94,0.02) 2px, rgba(34,197,94,0.02) 4px)",pointerEvents:"none"}}/>
-                    <div style={{position:"absolute",top:0,left:0,right:0,height:"1px",background:"linear-gradient(90deg, transparent, rgba(34,197,94,0.5), transparent)",animation:"dataLinePulse 2s ease-in-out infinite",opacity:0.6}}/>
-                    <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"16px",position:"relative",zIndex:1}}>
-                      <div style={{width:"4px",height:"18px",background:"linear-gradient(180deg,#4ADE80,#22C55E)",borderRadius:"2px",boxShadow:"0 0 12px rgba(74,222,128,0.5)"}}/>
-                      <span style={{color:"#6EE7B7",fontSize:"0.65rem",letterSpacing:"5px",fontWeight:800}}>COMPLETED TODAY</span>
-                      <span style={{color:"#4A6B5A",fontSize:"0.55rem",marginLeft:"auto"}}>MISSION_LOG</span>
+            {addQuestZone && typeof document !== "undefined" &&
+              createPortal(
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="sl-add-quest-title"
+                  onClick={() => setAddQuestZone(null)}
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 10000,
+                    background: "rgba(0,0,0,0.55)",
+                    backdropFilter: "blur(10px)",
+                    WebkitBackdropFilter: "blur(10px)",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "center",
+                    padding: "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
+                    overflowY: "auto",
+                  }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: "min(420px, calc(100vw - 24px))",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      marginTop: "clamp(8px, 4vh, 40px)",
+                      marginBottom: 24,
+                      borderRadius: 14,
+                      border: "1px solid rgba(56,189,248,0.35)",
+                      background: "rgba(15,23,42,0.96)",
+                      padding: 18,
+                      color: "#E0F2FE",
+                      fontFamily: "var(--font-ui)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <div id="sl-add-quest-title" style={{ fontSize: "0.72rem", letterSpacing: "0.2em", color: "#7dd3fc", fontWeight: 700 }}>
+                      新增自訂任務
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",gap:"2px",position:"relative",zIndex:1}}>
-                      {completedTodayList.map((q, i)=>(
-                        <div key={q.id} style={{
-                          display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px",
-                          padding:"12px 14px",borderRadius:"10px",
-                          borderLeft:"3px solid rgba(74,222,128,0.6)",
-                          background: missionCompleteEffect?.questId === q.id ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.02)",
-                          animation: missionCompleteEffect?.questId === q.id ? "completedItemIn 0.3s ease forwards, missionRowGlow 0.6s ease 0.2s forwards" : "completedItemIn 0.3s ease forwards",
-                          animationDelay: missionCompleteEffect?.questId === q.id ? "0s, 0s" : `${i * 0.06}s`,
-                          opacity: 0,
-                        }}>
-                          <span style={{color:"#A7F3D0",fontSize:"0.82rem",fontWeight:500,flex:1}}>✓ {q.label}</span>
-                          <span style={{
-                            padding:"4px 10px",borderRadius:"8px",
-                            background:"linear-gradient(135deg, rgba(34,197,94,0.25), rgba(22,163,74,0.2))",
-                            border:"1px solid rgba(74,222,128,0.4)",
-                            color:"#86EFAC",fontSize:"0.72rem",fontWeight:700,
-                            animation:"completedExpIn 0.2s ease 0.15s forwards",opacity:0,
-                            boxShadow:"0 0 12px rgba(34,197,94,0.2)",
-                          }}>+{q.exp} EXP</span>
-                        </div>
-                      ))}
+                    <div style={{ fontSize: "0.85rem", marginTop: 6, color: "#A5D4F7" }}>
+                      區域：
+                      {addQuestZone === "daily" && "每日系統任務"}
+                      {addQuestZone === "support" && "支援任務"}
+                      {addQuestZone === "boss" && "Boss Raid"}
+                      {addQuestZone === "emergency" && "緊急任務"}
+                    </div>
+                    <label style={{ display: "grid", gap: 6, marginTop: 14, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", letterSpacing: "0.15em", color: "#94A3B8" }}>標題</span>
+                      <input
+                        value={addQuestLabel}
+                        onChange={(e) => setAddQuestLabel(e.target.value)}
+                        placeholder="任務描述"
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      />
+                    </label>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                        gap: 10,
+                        marginTop: 12,
+                        minWidth: 0,
+                      }}
+                    >
+                      <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                        <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>EXP</span>
+                        <input
+                          inputMode="numeric"
+                          value={addQuestExp}
+                          onChange={(e) => setAddQuestExp(e.target.value)}
+                          style={{
+                            width: "100%",
+                            maxWidth: "100%",
+                            minWidth: 0,
+                            boxSizing: "border-box",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                        <span style={{ fontSize: "0.58rem", color: "#94A3B8", lineHeight: 1.3 }}>計時（分鐘）</span>
+                        <input
+                          inputMode="numeric"
+                          value={addQuestMinutes}
+                          onChange={(e) => setAddQuestMinutes(e.target.value)}
+                          style={{
+                            width: "100%",
+                            maxWidth: "100%",
+                            minWidth: 0,
+                            boxSizing: "border-box",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <label style={{ display: "grid", gap: 6, marginTop: 12, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>屬性</span>
+                      <select
+                        value={addQuestAttr}
+                        onChange={(e) => setAddQuestAttr(e.target.value as AttrKey)}
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      >
+                        {(["PHY", "INT", "EXE", "RES", "SOC"] as const).map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ display: "grid", gap: 6, marginTop: 12, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>完成方式</span>
+                      <select
+                        value={addQuestMode}
+                        onChange={(e) => setAddQuestMode(e.target.value as QuestCompletionMode)}
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      >
+                        <option value="timer">計時（開啟任務倒數）</option>
+                        <option value="instant">一鍵完成</option>
+                      </select>
+                    </label>
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setAddQuestZone(null)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          background: "transparent",
+                          color: "#94A3B8",
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!addQuestZone) return;
+                          sound.playClick();
+                          const exp = Math.max(0, Math.min(9999, Number.parseInt(addQuestExp, 10) || 0));
+                          const minutes = Math.max(1, Math.min(240, Number.parseInt(addQuestMinutes, 10) || 25));
+                          const nextId =
+                            customQuests.length === 0
+                              ? CUSTOM_QUEST_MIN_ID + 1
+                              : Math.max(...customQuests.map((c) => c.id), CUSTOM_QUEST_MIN_ID) + 1;
+                          setCustomQuests((prev) => [
+                            ...prev,
+                            {
+                              id: nextId,
+                              zone: addQuestZone,
+                              label: addQuestLabel.trim() || "自訂任務",
+                              exp,
+                              minutes,
+                              attr: addQuestAttr,
+                              mode: addQuestMode,
+                            },
+                          ]);
+                          setAddQuestZone(null);
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.7)",
+                          background: "rgba(56,189,248,0.2)",
+                          color: "#E0F2FE",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                        }}
+                      >
+                        加入任務
+                      </button>
                     </div>
                   </div>
-                )}
-
-                {/* ACHIEVEMENTS — 節點環 + 全息徽章 */}
-                <div style={{
-                  animation:"summarySectionIn 0.55s ease forwards",
-                  animationDelay:"0.18s",
-                  opacity:0,
-                  position:"relative",
-                  background:"linear-gradient(145deg, rgba(20,15,35,0.95) 0%, rgba(12,24,48,0.9) 100%)",
-                  border:"1px solid rgba(240,192,48,0.3)",
-                  borderRadius:"16px",
-                  padding:"20px 22px",
-                  boxShadow:"0 0 40px rgba(240,192,48,0.1), inset 0 0 60px rgba(240,192,48,0.03)",
-                  overflow:"hidden",
-                }}>
-                  <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 80% 50% at 50% 0%, rgba(240,192,48,0.06), transparent 70%)",pointerEvents:"none"}}/>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"18px",position:"relative",zIndex:1}}>
-                    <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-                      <span style={{fontSize:"1.1rem",filter:"drop-shadow(0 0 8px rgba(240,192,48,0.6))"}}>◇</span>
-                      <span style={{color:"#FCD34D",fontSize:"0.7rem",letterSpacing:"5px",fontWeight:800,textShadow:"0 0 20px rgba(252,211,77,0.4)"}}>ACHIEVEMENTS</span>
-                    </div>
-                    <span style={{color:"#A78B4A",fontSize:"0.6rem",letterSpacing:"2px",fontWeight:600}}>{unlockedAchievements.length}/{ACHIEVEMENTS.length} UNLOCKED</span>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:"14px",marginBottom:"18px",position:"relative",zIndex:1}}>
-                    {ACHIEVEMENTS.map((a,idx)=>{
-                      const unlocked = unlockedAchievements.includes(a.id);
-                      return (
-                        <div key={a.id} title={a.title} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"8px"}}>
-                          <div className={unlocked ? "glow-breath" : ""} style={{
-                            position:"relative",
-                            width:"52px",height:"52px",borderRadius:"50%",
-                            background: unlocked ? "linear-gradient(145deg, rgba(252,211,77,0.25), rgba(245,158,11,0.15))" : "rgba(255,255,255,0.03)",
-                            border: unlocked ? "2px solid rgba(252,211,77,0.7)" : "1px solid rgba(255,255,255,0.08)",
-                            display:"flex",alignItems:"center",justifyContent:"center",
-                            boxShadow: unlocked ? "0 0 24px rgba(240,192,48,0.35), inset 0 0 20px rgba(252,211,77,0.1)" : "none",
-                            animation: "summarySectionIn 0.4s ease forwards",
-                            animationDelay: `${0.22 + idx*0.04}s`,
-                            opacity: 0,
-                          }}>
-                            {unlocked && <div style={{position:"absolute",inset:"-4px",borderRadius:"50%",border:"1px solid rgba(252,211,77,0.25)",animation:"nodeRing 2s ease-in-out infinite"}}/>}
-                            <span style={{fontSize:unlocked ? "1.4rem" : "0.9rem",opacity:unlocked ? 1 : 0.3,filter:unlocked ? "drop-shadow(0 0 6px rgba(252,211,77,0.8))" : "none"}}>{unlocked ? a.icon : "○"}</span>
-                          </div>
-                          {unlocked && (
-                            <div style={{
-                              padding:"4px 10px",borderRadius:"8px",
-                              background:"linear-gradient(135deg, rgba(252,211,77,0.15), rgba(245,158,11,0.08))",
-                              border:"1px solid rgba(252,211,77,0.4)",
-                              boxShadow:"0 0 16px rgba(240,192,48,0.2)",
-                              maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                            }}>
-                              <span style={{color:"#FDE68A",fontSize:"0.58rem",letterSpacing:"1px",fontWeight:600}}>{a.title}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* SKILL TREE — 科技樹節點 + 連線感 */}
-                <div style={{
-                  animation:"summarySectionIn 0.55s ease forwards",
-                  animationDelay:"0.24s",
-                  opacity:0,
-                  position:"relative",
-                  background:"linear-gradient(160deg, rgba(12,35,40,0.95) 0%, rgba(12,24,48,0.92) 100%)",
-                  border:"1px solid rgba(74,154,138,0.35)",
-                  borderRadius:"16px",
-                  padding:"22px 24px",
-                  boxShadow:"0 0 35px rgba(74,154,138,0.12), inset 0 0 50px rgba(74,154,138,0.04)",
-                  overflow:"hidden",
-                }}>
-                  <div style={{position:"absolute",inset:0,background:"linear-gradient(180deg, transparent 0%, rgba(74,154,138,0.03) 50%, transparent 100%)",pointerEvents:"none"}}/>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px",position:"relative",zIndex:1}}>
-                    <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-                      <div style={{width:"4px",height:"20px",background:"linear-gradient(180deg,#5EEAD4,#2DD4BF)",borderRadius:"2px",boxShadow:"0 0 14px rgba(94,234,212,0.5)"}}/>
-                      <span style={{color:"#5EEAD4",fontSize:"0.7rem",letterSpacing:"5px",fontWeight:800,textShadow:"0 0 18px rgba(94,234,212,0.35)"}}>SKILL TREE</span>
-                    </div>
-                    <span style={{color:"#4A7A6A",fontSize:"0.6rem",letterSpacing:"2px",fontWeight:600}}>{unlockedSkillIds.length}/{SKILLS.length} UNLOCKED</span>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"18px",position:"relative",zIndex:1}}>
-                    {(["EXECUTION","INTELLIGENCE","PHYSICAL"] as SkillTree[]).map((tree, treeIdx)=>{
-                      const treeSkills = SKILLS.filter(s=>s.tree===tree);
-                      const unlockedInTree = treeSkills.filter(s=>unlockedSkillIds.includes(s.id)).length;
-                      const pct = treeSkills.length ? (unlockedInTree / treeSkills.length) * 100 : 0;
-                      const treeColor = tree==="EXECUTION" ? "#38BDF8" : tree==="INTELLIGENCE" ? "#A78BFA" : "#34D399";
-                      return (
-                        <div key={tree} style={{
-                          padding:"16px 18px",
-                          borderRadius:"14px",
-                          background:"rgba(0,0,0,0.25)",
-                          border:`1px solid ${treeColor}30`,
-                          boxShadow:`0 0 20px ${treeColor}10, inset 0 1px 0 rgba(255,255,255,0.03)`,
-                          animation:"summarySectionIn 0.45s ease forwards",
-                          animationDelay:`${0.28 + treeIdx*0.06}s`,
-                          opacity:0,
-                        }}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
-                            <span style={{color:treeColor,fontSize:"0.62rem",letterSpacing:"3px",fontWeight:700}}>{tree}</span>
-                            <span style={{color:"#5A7A6A",fontSize:"0.52rem"}}>{unlockedInTree}/{treeSkills.length}</span>
-                          </div>
-                          <div style={{height:"5px",background:"rgba(255,255,255,0.06)",borderRadius:"3px",marginBottom:"14px",overflow:"hidden",boxShadow:"inset 0 1px 2px rgba(0,0,0,0.2)"}}>
-                            <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${treeColor}88,${treeColor})`,borderRadius:"3px",transition:"width 0.5s ease",boxShadow:`0 0 10px ${treeColor}50`}}/>
-                          </div>
-                          {treeSkills.map((s,i)=>{
-                            const ok = unlockedSkillIds.includes(s.id);
-                            const isNewUnlock = justUnlockedSkillId === s.id;
-                            return (
-                              <div key={s.id} style={{
-                                display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",
-                                padding:"6px 8px",borderRadius:"8px",
-                                ...(isNewUnlock ? {animation:"skillNodeFlash 0.6s ease 2 forwards",background:"rgba(74,154,138,0.15)"} : {}),
-                              }}>
-                                <span className={ok ? "glow-breath" : ""} style={{
-                                  width:"22px",height:"22px",borderRadius:"50%",
-                                  border:ok ? `2px solid ${treeColor}` : "1px solid rgba(255,255,255,0.1)",
-                                  background:ok ? `${treeColor}22` : "rgba(255,255,255,0.04)",
-                                  display:"flex",alignItems:"center",justifyContent:"center",
-                                  fontSize:"0.65rem",color:ok ? treeColor : "rgba(255,255,255,0.25)",
-                                  boxShadow:ok ? `0 0 12px ${treeColor}40` : "none",
-                                }}>{ok?"✓":"○"}</span>
-                                <span style={{flex:1,color:ok?"#C8E0E8":"#4A6078",fontSize:"0.68rem",fontWeight:500}}>{s.name}</span>
-                                {ok && <span style={{color:"#34D399",fontSize:"0.58rem",fontWeight:700}}>+{s.expBonusPercent}%</span>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
+                </div>,
+                document.body,
+              )}
 
             {tab==="analytics" && (() => {
                 const glass = { background:"rgba(255,255,255,0.03)", backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)" };
@@ -3574,35 +4005,13 @@ export default function Home() {
           </div>
         </div>
 
-        <div style={{marginTop:"32px",paddingTop:"16px",
+        <div className="sl-footer-bar" style={{marginTop:"32px",paddingTop:"16px",
           borderTop:"1px solid rgba(58,122,212,0.1)",
-          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
           <span style={{color:"#3A5070",fontSize:"0.6rem",letterSpacing:"3px",fontWeight:500}}>
             SOLO LEVELING EQUATION · SYSTEM v2.0
           </span>
-          <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-            <Link
-              href="/ielts"
-              onMouseEnter={sound.playHover}
-              onClick={() => sound.playClick()}
-              style={{
-                padding:"6px 10px",
-                borderRadius:"8px",
-                border:"1px solid rgba(56,189,248,0.25)",
-                background:"rgba(56,189,248,0.08)",
-                color:"#7dd3fc",
-                fontSize:"0.6rem",
-                letterSpacing:"2px",
-                fontWeight:700,
-                textDecoration:"none",
-                fontFamily:"var(--font-system)",
-              }}
-              title="前往 IELTS 衝刺備考（學習模式）"
-            >
-              IELTS 備考
-            </Link>
-            <span style={{color:"#3A7AD4",fontSize:"0.6rem",animation:"blink 3s ease-in-out infinite"}}>■</span>
-          </div>
+          <span style={{color:"#3A7AD4",fontSize:"0.6rem",animation:"blink 3s ease-in-out infinite"}}>■</span>
         </div>
       </div>
 

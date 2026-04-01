@@ -252,6 +252,8 @@ export function useIELTSStore() {
     breakMin: settings.pomodoroBreakMin,
     startedAt: null,
   });
+  /** Bumps on each tick while focus/break runs so remaining sec (from Date.now vs endAt) recomputes. */
+  const [pomoDisplayTick, setPomoDisplayTick] = useState(0);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
 
   useEffect(() => {
@@ -382,12 +384,13 @@ export function useIELTSStore() {
     if (pomo.phase === "pause" && pomo.remainingMs != null) return Math.max(0, Math.ceil(pomo.remainingMs / 1000));
     if ((pomo.phase === "focus" || pomo.phase === "break") && pomo.endAt) return Math.max(0, Math.ceil((pomo.endAt - Date.now()) / 1000));
     return 0;
-  }, [pomo]);
+  }, [pomo, pomoDisplayTick]);
 
   useEffect(() => {
     if (!ready) return;
     if (pomo.phase !== "focus" && pomo.phase !== "break") return;
     const t = setInterval(() => {
+      setPomoDisplayTick((n) => n + 1);
       setPomo((prev) => {
         if (prev.phase !== "focus" && prev.phase !== "break") return prev;
         if (!prev.endAt) return prev;

@@ -217,11 +217,11 @@
   transform: scale(1.02);
 }
 .ielts-tab-dot {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--ielts-accent);
-  margin: 4px auto 0;
+  margin: 2px auto 0;
   animation: ielts-dot-in 0.2s ease forwards;
 }
 @keyframes ielts-dot-in {

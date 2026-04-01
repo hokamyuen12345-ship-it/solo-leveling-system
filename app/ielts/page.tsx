@@ -282,7 +282,7 @@ export default function IELTSPage() {
           minHeight: "100dvh",
           maxWidth: 430,
           margin: "0 auto",
-          padding: "16px 14px 88px",
+          padding: "16px 14px calc(108px + env(safe-area-inset-bottom, 0px))",
           fontFamily:
             "ui-sans-serif, system-ui, -apple-system, 'PingFang TC', 'Noto Sans TC', 'Microsoft JhengHei', sans-serif",
         }}
@@ -390,8 +390,9 @@ export default function IELTSPage() {
             left: 0,
             right: 0,
             bottom: 0,
-            height: 64,
-            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            minHeight: 80,
+            paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))",
+            paddingTop: 10,
             background: "var(--ielts-bg-surface)",
             borderTop: "1px solid var(--ielts-border-light)",
             boxShadow: "var(--ielts-shadow-sm)",
@@ -402,11 +403,11 @@ export default function IELTSPage() {
             style={{
               maxWidth: 430,
               margin: "0 auto",
-              height: "100%",
+              minHeight: 60,
               display: "grid",
               gridTemplateColumns: "repeat(5, 1fr)",
               alignItems: "center",
-              padding: "0 4px",
+              padding: "0 6px",
             }}
           >
             {TABS.map((t) => {
@@ -424,28 +425,31 @@ export default function IELTSPage() {
                     flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 2,
+                    gap: 4,
                     border: "none",
                     background: "transparent",
                     cursor: "pointer",
                     color: active ? "var(--ielts-accent)" : "var(--ielts-text-3)",
-                    fontSize: 9,
+                    fontSize: 11,
                     fontWeight: 600,
                     position: "relative",
-                    padding: "6px 2px",
+                    padding: "8px 4px",
+                    minHeight: 56,
+                    touchAction: "manipulation",
+                    WebkitTapHighlightColor: "transparent",
                   }}
                 >
-                  <span style={{ fontSize: 14, lineHeight: 1 }}>{t.icon}</span>
+                  <span style={{ fontSize: 20, lineHeight: 1 }}>{t.icon}</span>
                   <span>{t.label}</span>
                   {active && <span className="ielts-tab-dot" />}
                   {badge && (
                     <span
                       style={{
                         position: "absolute",
-                        top: 4,
-                        right: "18%",
-                        width: 7,
-                        height: 7,
+                        top: 6,
+                        right: "16%",
+                        width: 8,
+                        height: 8,
                         borderRadius: "50%",
                         background: "var(--ielts-warning)",
                         boxShadow: "0 0 0 2px var(--ielts-bg-surface)",
