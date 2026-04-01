@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-export type IELTSSection = "today" | "calendar" | "cards" | "scores" | "settings";
+export type IELTSSection = "today" | "calendar" | "cards" | "records" | "scores" | "settings";
 
 export type FlashcardCategory = "vocab" | "writing" | "speaking" | "grammar";
 
@@ -16,6 +16,17 @@ export type Flashcard = {
   createdAt: string;
 };
 export type SkillType = "L" | "R" | "W" | "S";
+
+export type SpeakingWritingType = "writing" | "speaking";
+export type SpeakingWritingEntry = {
+  id: string;
+  type: SpeakingWritingType;
+  prompt: string;
+  response: string;
+  notes?: string;
+  createdAt: string; // YYYY-MM-DD
+  updatedAt: string; // YYYY-MM-DD
+};
 
 export type DayTask = {
   id: string;
@@ -85,6 +96,7 @@ const KEY_SCORES = "ielts_scores";
 const KEY_WRONG = "ielts_wrong_questions";
 const KEY_POMO_SESSION = "ielts_pomodoro_session";
 const KEY_FLASHCARDS = "ielts_flashcards_v1";
+const KEY_SW_RECORDS = "ielts_sw_records_v1";
 
 export const IELTS_STORAGE_KEYS = [
   KEY_VERSION,
@@ -96,6 +108,7 @@ export const IELTS_STORAGE_KEYS = [
   KEY_WRONG,
   KEY_POMO_SESSION,
   KEY_FLASHCARDS,
+  KEY_SW_RECORDS,
 ] as const;
 
 const SCHEMA_VERSION = 1;
@@ -255,11 +268,13 @@ export function useIELTSStore() {
   /** Bumps on each tick while focus/break runs so remaining sec (from Date.now vs endAt) recomputes. */
   const [pomoDisplayTick, setPomoDisplayTick] = useState(0);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [swRecords, setSwRecords] = useState<SpeakingWritingEntry[]>([]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     migrateIfNeeded();
     if (localStorage.getItem(KEY_FLASHCARDS) === null) lsSet(KEY_FLASHCARDS, []);
+    if (localStorage.getItem(KEY_SW_RECORDS) === null) lsSet(KEY_SW_RECORDS, []);
     setSettings(lsGet<Settings>(KEY_SETTINGS) ?? defaultSettings());
     setOverride(lsGet<Overrides>(KEY_OVERRIDE) ?? {});
     setCompletion(lsGet<Completion>(KEY_COMPLETION) ?? {});
@@ -276,6 +291,7 @@ export function useIELTSStore() {
       startedAt: null,
     });
     setFlashcards(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []);
+    setSwRecords(lsGet<SpeakingWritingEntry[]>(KEY_SW_RECORDS) ?? []);
     setReady(true);
   }, []);
 
@@ -311,6 +327,10 @@ export function useIELTSStore() {
     if (!ready) return;
     lsSet(KEY_FLASHCARDS, flashcards);
   }, [ready, flashcards]);
+  useEffect(() => {
+    if (!ready) return;
+    lsSet(KEY_SW_RECORDS, swRecords);
+  }, [ready, swRecords]);
 
   const getDayPlan = useCallback((day: number): DayPlan => {
     const base = scheduleDefault.find((p) => p.day === day) ?? scheduleDefault[0];
@@ -492,6 +512,48 @@ export function useIELTSStore() {
     [],
   );
 
+  const addSwRecord = useCallback((item: Pick<SpeakingWritingEntry, "type" | "prompt" | "response"> & { notes?: string }) => {
+    const iso = todayIso();
+    const prompt = item.prompt.trim();
+    const response = item.response.trim();
+    if (!prompt || !response) return;
+    const notes = item.notes?.trim() ? item.notes.trim() : undefined;
+    setSwRecords((prev) => [
+      {
+        id: crypto.randomUUID(),
+        type: item.type,
+        prompt,
+        response,
+        notes,
+        createdAt: iso,
+        updatedAt: iso,
+      },
+      ...prev,
+    ]);
+  }, []);
+
+  const updateSwRecord = useCallback(
+    (id: string, item: Pick<SpeakingWritingEntry, "type" | "prompt" | "response"> & { notes?: string }) => {
+      const iso = todayIso();
+      const prompt = item.prompt.trim();
+      const response = item.response.trim();
+      if (!prompt || !response) return;
+      const notes = item.notes?.trim() ? item.notes.trim() : undefined;
+      setSwRecords((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? { ...r, type: item.type, prompt, response, notes, updatedAt: iso }
+            : r,
+        ),
+      );
+    },
+    [],
+  );
+
+  const removeSwRecord = useCallback((id: string) => {
+    setSwRecords((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
   const clearAllLocalData = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
@@ -507,6 +569,7 @@ export function useIELTSStore() {
     setScores([]);
     setWrongItems([]);
     setFlashcards([]);
+    setSwRecords([]);
     setPomo({
       phase: "idle",
       endAt: null,
@@ -525,6 +588,7 @@ export function useIELTSStore() {
       lsSet(KEY_SCORES, []);
       lsSet(KEY_WRONG, []);
       lsSet(KEY_FLASHCARDS, []);
+      lsSet(KEY_SW_RECORDS, []);
       lsSet(KEY_POMO_SESSION, {
         phase: "idle",
         endAt: null,
@@ -550,9 +614,10 @@ export function useIELTSStore() {
       wrongItems,
       pomodoroSession: pomo,
       flashcards,
+      swRecords,
       exportedAt: new Date().toISOString(),
     };
-  }, [completion, flashcards, notes, override, pomo, scores, settings, wrongItems]);
+  }, [completion, flashcards, notes, override, pomo, scores, settings, swRecords, wrongItems]);
 
   const importAll = useCallback((json: unknown) => {
     if (!json || typeof json !== "object") throw new Error("Invalid JSON");
@@ -565,6 +630,7 @@ export function useIELTSStore() {
       wrongItems: WrongItem[];
       pomodoroSession: PomodoroSession;
       flashcards: Flashcard[];
+      swRecords: SpeakingWritingEntry[];
     }>;
     if (obj.settings) setSettings({ ...defaultSettings(), ...obj.settings, schemaVersion: SCHEMA_VERSION });
     if (obj.scheduleOverride) setOverride(obj.scheduleOverride);
@@ -574,6 +640,7 @@ export function useIELTSStore() {
     if (obj.wrongItems) setWrongItems(obj.wrongItems);
     if (obj.pomodoroSession) setPomo(obj.pomodoroSession);
     if (obj.flashcards) setFlashcards(obj.flashcards);
+    if (obj.swRecords) setSwRecords(obj.swRecords);
   }, []);
 
   return {
@@ -610,6 +677,10 @@ export function useIELTSStore() {
     toggleFlashcardMastered,
     setFlashcardMastered,
     updateFlashcard,
+    swRecords,
+    addSwRecord,
+    updateSwRecord,
+    removeSwRecord,
     clearAllLocalData,
     exportAll,
     importAll,

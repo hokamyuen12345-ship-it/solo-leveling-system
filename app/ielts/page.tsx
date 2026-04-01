@@ -13,7 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { FlashcardQuiz } from "./flashcard-quiz";
 import { ScoreTrendChart } from "./score-trend-chart";
-import { useIELTSStore, type DayTask, type Flashcard, type FlashcardCategory, type IELTSSection } from "./store";
+import { useIELTSStore, type DayTask, type Flashcard, type FlashcardCategory, type IELTSSection, type SpeakingWritingEntry, type SpeakingWritingType } from "./store";
 
 const SL_HOME_FROM_IELTS = "sl_home_from_ielts_v1";
 
@@ -43,6 +43,7 @@ const TABS: { id: IELTSSection; label: string; icon: string }[] = [
   { id: "today", label: "今日", icon: "◆" },
   { id: "calendar", label: "進度", icon: "◇" },
   { id: "cards", label: "字卡", icon: "▤" },
+  { id: "records", label: "記錄", icon: "✎" },
   { id: "scores", label: "成績", icon: "▦" },
   { id: "settings", label: "設定", icon: "⚙" },
 ];
@@ -249,6 +250,7 @@ export default function IELTSPage() {
       today: { title: "今日", desc: "查看計畫、記錄完成，並用計時器安排專注與休息。" },
       calendar: { title: "進度", desc: "完成率、分數趨勢與二十五天熱力圖。" },
       cards: { title: "字卡", desc: "新增單詞、分類篩選與全屏翻卡測驗。" },
+      records: { title: "Writing / Speaking 記錄", desc: "把題目與你的回答存起來，隨時回看與微調。" },
       scores: { title: "成績與複習", desc: "模考紀錄、目標對照與錯題本。" },
       settings: { title: "設定", desc: "日期、計時、備份與外觀。" },
     };
@@ -395,6 +397,8 @@ export default function IELTSPage() {
             />
             ) : tab === "cards" ? (
               <CardsPanel store={store} themeDark={themeDark} />
+            ) : tab === "records" ? (
+              <RecordsPanel store={store} themeDark={themeDark} />
             ) : tab === "scores" ? (
               <ScoresTab store={store} latest={latest} />
             ) : (
@@ -429,7 +433,7 @@ export default function IELTSPage() {
               margin: "0 auto",
               minHeight: 60,
               display: "grid",
-              gridTemplateColumns: "repeat(5, 1fr)",
+              gridTemplateColumns: "repeat(6, 1fr)",
               alignItems: "center",
               padding: "0 6px",
             }}
@@ -1370,6 +1374,325 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
             </div>
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+function recordTypeLabel(t: SpeakingWritingType): string {
+  return t === "writing" ? "Writing" : "Speaking";
+}
+
+function recordQuestions(t: SpeakingWritingType): string[] {
+  if (t === "writing") {
+    return [
+      "你的立場/主論點是什麼？一句話說清楚。",
+      "你會用哪兩個主要理由支撐？各自的例子是什麼？",
+      "有沒有可能的反方觀點？你如何回應？",
+      "最後一段的結論句你想怎麼收束？",
+    ];
+  }
+  return [
+    "你想先用哪一句開場？（重述題目＋立場）",
+    "你會用哪一個生活例子？為什麼能說服人？",
+    "如果被追問『為什麼』，你的下一句會怎麼說？",
+    "你想用什麼一句話結尾？",
+  ];
+}
+
+function RecordsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSStore>; themeDark: boolean }) {
+  const [filter, setFilter] = useState<"all" | SpeakingWritingType>("all");
+  const [q, setQ] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+
+  const [rtype, setRtype] = useState<SpeakingWritingType>("writing");
+  const [prompt, setPrompt] = useState("");
+  const [response, setResponse] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const [etype, setEtype] = useState<SpeakingWritingType>("writing");
+  const [eprompt, setEprompt] = useState("");
+  const [eresponse, setEresponse] = useState("");
+  const [enotes, setEnotes] = useState("");
+
+  const editing = useMemo(() => (editId ? store.swRecords.find((r) => r.id === editId) ?? null : null), [editId, store.swRecords]);
+  useEffect(() => {
+    if (!editing) return;
+    setEtype(editing.type);
+    setEprompt(editing.prompt);
+    setEresponse(editing.response);
+    setEnotes(editing.notes ?? "");
+  }, [editing]);
+  useEffect(() => {
+    if (editId && !store.swRecords.some((r) => r.id === editId)) setEditId(null);
+  }, [editId, store.swRecords]);
+
+  const filtered = useMemo(() => {
+    const base = filter === "all" ? store.swRecords : store.swRecords.filter((r) => r.type === filter);
+    const needle = q.trim().toLowerCase();
+    if (!needle) return base;
+    return base.filter((r) => `${r.prompt}\n${r.response}\n${r.notes ?? ""}`.toLowerCase().includes(needle));
+  }, [filter, q, store.swRecords]);
+
+  const openAdd = () => {
+    setEditId(null);
+    setAddOpen(true);
+  };
+  const saveAdd = () => {
+    if (!prompt.trim() || !response.trim()) {
+      window.alert("請填寫題目與你的回答。");
+      return;
+    }
+    store.addSwRecord({ type: rtype, prompt: prompt.trim(), response: response.trim(), notes: notes.trim() || undefined });
+    setPrompt("");
+    setResponse("");
+    setNotes("");
+    setRtype("writing");
+    setAddOpen(false);
+  };
+  const saveEdit = () => {
+    if (!editing) return;
+    if (!eprompt.trim() || !eresponse.trim()) {
+      window.alert("請填寫題目與你的回答。");
+      return;
+    }
+    store.updateSwRecord(editing.id, { type: etype, prompt: eprompt.trim(), response: eresponse.trim(), notes: enotes.trim() || undefined });
+    setEditId(null);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        {[
+          { label: "總記錄", v: store.swRecords.length, c: "var(--ielts-accent)" },
+          { label: "Writing", v: store.swRecords.filter((r) => r.type === "writing").length, c: "var(--ielts-writing)" },
+          { label: "Speaking", v: store.swRecords.filter((r) => r.type === "speaking").length, c: "var(--ielts-speaking)" },
+        ].map((x, i) => (
+          <div key={x.label} className="ielts-card-static ielts-enter" style={{ padding: 14, textAlign: "center", animationDelay: `${i * 0.06}s` }}>
+            <div className="ielts-text-display" style={{ color: x.c, fontSize: 28 }}>
+              {x.v}
+            </div>
+            <div className="ielts-text-caption" style={{ marginTop: 6 }}>
+              {x.label}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 10 }}>
+        <button type="button" className="ielts-btn ielts-enter" style={{ ...outlineBtn(), flex: 1 }} onClick={openAdd}>
+          ＋ 新增記錄
+        </button>
+      </div>
+
+      <div className="ielts-card-static" style={{ padding: 14 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {(
+            [
+              { id: "all" as const, label: "全部" },
+              { id: "writing" as const, label: "Writing" },
+              { id: "speaking" as const, label: "Speaking" },
+            ] as const
+          ).map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="ielts-btn"
+              onClick={() => setFilter(p.id)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 999,
+                border: "none",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: filter === p.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                color: filter === p.id ? "#fff" : "var(--ielts-text-3)",
+                transition: "all 0.2s ease",
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+          <div style={{ flex: 1, minWidth: 160 }} />
+          <input
+            className="ielts-input"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="搜尋題目／回答…"
+            style={{ width: "min(240px, 100%)" }}
+          />
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="ielts-card-static" style={{ padding: 32, textAlign: "center" }}>
+          <p className="ielts-text-body" style={{ color: "var(--ielts-text-3)" }}>
+            尚無記錄。點「新增記錄」把題目與你的回答存起來。
+          </p>
+        </div>
+      ) : (
+        filtered.map((r) => (
+          <div key={r.id} className="ielts-card-static ielts-enter" style={{ padding: 16, borderLeft: `4px solid ${r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)"}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span className="ielts-text-caption" style={{ fontWeight: 800, color: r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}>
+                    {recordTypeLabel(r.type)}
+                  </span>
+                  <span className="ielts-text-caption">· {r.updatedAt}</span>
+                </div>
+                <div className="ielts-text-heading" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
+                  {r.prompt}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  style={{ ...outlineBtn(), padding: "8px 12px", fontSize: 12, borderWidth: 2 }}
+                  onClick={() => {
+                    setAddOpen(false);
+                    setEditId(r.id);
+                  }}
+                >
+                  編輯
+                </button>
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  style={{ fontSize: 12, color: "var(--ielts-danger)", border: "none", background: "none", cursor: "pointer", fontWeight: 700 }}
+                  onClick={() => {
+                    if (window.confirm("確定刪除此記錄？")) store.removeSwRecord(r.id);
+                  }}
+                >
+                  刪除
+                </button>
+              </div>
+            </div>
+            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+              <div>
+                <div className="ielts-text-caption" style={{ marginBottom: 6 }}>
+                  你的回答
+                </div>
+                <div className="ielts-text-body" style={{ whiteSpace: "pre-wrap", color: "var(--ielts-text-2)", fontSize: 14 }}>
+                  {r.response}
+                </div>
+              </div>
+              {r.notes ? (
+                <div>
+                  <div className="ielts-text-caption" style={{ marginBottom: 6 }}>
+                    備註
+                  </div>
+                  <div className="ielts-text-caption" style={{ whiteSpace: "pre-wrap", color: "var(--ielts-text-3)" }}>
+                    {r.notes}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ))
+      )}
+
+      {addOpen && (
+        <IeltsSheetPortal themeDark={themeDark}>
+          <div className="ielts-sheet-backdrop" role="presentation" style={{ pointerEvents: "auto" }} onClick={() => setAddOpen(false)} />
+          <div className="ielts-sheet" style={{ pointerEvents: "auto", maxHeight: "85vh", overflowY: "auto", paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))" }}>
+            <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
+              新增記錄
+            </div>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              類型
+              <select className="ielts-input" value={rtype} onChange={(e) => setRtype(e.target.value as SpeakingWritingType)}>
+                <option value="writing">Writing</option>
+                <option value="speaking">Speaking</option>
+              </select>
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              題目
+              <textarea className="ielts-input" style={{ minHeight: 72 }} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="貼上題目或問題…" />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              你的回答
+              <textarea className="ielts-input" style={{ minHeight: 140 }} value={response} onChange={(e) => setResponse(e.target.value)} placeholder="寫下你的回答（可長文）…" />
+            </label>
+            <div className="ielts-card-static" style={{ padding: 14, background: "var(--ielts-bg-hover)" }}>
+              <div className="ielts-text-caption" style={{ fontWeight: 800, marginBottom: 8 }}>
+                引導問題（系統會問你）
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6 }}>
+                {recordQuestions(rtype).map((x) => (
+                  <li key={x} className="ielts-text-caption" style={{ color: "var(--ielts-text-2)" }}>
+                    {x}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginTop: 10, marginBottom: 14 }}>
+              備註（選填）
+              <textarea className="ielts-input" style={{ minHeight: 72 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </label>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={() => setAddOpen(false)}>
+                取消
+              </button>
+              <button type="button" className="ielts-btn" style={{ ...solidBtn(), flex: 1 }} onClick={saveAdd}>
+                儲存
+              </button>
+            </div>
+          </div>
+        </IeltsSheetPortal>
+      )}
+
+      {editId && editing && (
+        <IeltsSheetPortal themeDark={themeDark}>
+          <div className="ielts-sheet-backdrop" role="presentation" style={{ pointerEvents: "auto" }} onClick={() => setEditId(null)} />
+          <div className="ielts-sheet" style={{ pointerEvents: "auto", maxHeight: "85vh", overflowY: "auto", paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))" }}>
+            <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
+              編輯記錄
+            </div>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              類型
+              <select className="ielts-input" value={etype} onChange={(e) => setEtype(e.target.value as SpeakingWritingType)}>
+                <option value="writing">Writing</option>
+                <option value="speaking">Speaking</option>
+              </select>
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              題目
+              <textarea className="ielts-input" style={{ minHeight: 72 }} value={eprompt} onChange={(e) => setEprompt(e.target.value)} />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              你的回答
+              <textarea className="ielts-input" style={{ minHeight: 140 }} value={eresponse} onChange={(e) => setEresponse(e.target.value)} />
+            </label>
+            <div className="ielts-card-static" style={{ padding: 14, background: "var(--ielts-bg-hover)" }}>
+              <div className="ielts-text-caption" style={{ fontWeight: 800, marginBottom: 8 }}>
+                引導問題（系統會問你）
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6 }}>
+                {recordQuestions(etype).map((x) => (
+                  <li key={x} className="ielts-text-caption" style={{ color: "var(--ielts-text-2)" }}>
+                    {x}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginTop: 10, marginBottom: 14 }}>
+              備註（選填）
+              <textarea className="ielts-input" style={{ minHeight: 72 }} value={enotes} onChange={(e) => setEnotes(e.target.value)} />
+            </label>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={() => setEditId(null)}>
+                取消
+              </button>
+              <button type="button" className="ielts-btn" style={{ ...solidBtn(), flex: 1 }} onClick={saveEdit}>
+                儲存
+              </button>
+            </div>
+          </div>
+        </IeltsSheetPortal>
       )}
     </div>
   );
