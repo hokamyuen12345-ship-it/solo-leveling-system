@@ -1,10 +1,13 @@
 "use client";
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import { getSupabase, SYNC_KEYS } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+
+/** 從 /ielts 按「返回主頁」時寫入，首頁讀取後略過 Boot 並聚焦任務分頁（重新開啟網址不會帶此旗標） */
+const SL_HOME_FROM_IELTS = "sl_home_from_ielts_v1";
 
 // ===== 聲效系統：Cyber-Metallic / Sharp Digital (SFX Specification) =====
 let audioCtx: AudioContext | null = null;
@@ -1581,6 +1584,8 @@ export default function Home() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const bgmFadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const emergencyVoiceSpoken = useRef(false);
+  /** 從 IELTS 返回：略過 Boot 後，等 loaded 再捲到任務區 */
+  const pendingFocusTasksFromIeltsRef = useRef(false);
   const sound = useSound();
   const systemVoice = useSystemVoice();
 
@@ -1596,6 +1601,29 @@ export default function Home() {
 
   useEffect(() => {
     setSettingsPortalReady(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    try {
+      if (sessionStorage.getItem(SL_HOME_FROM_IELTS) === "1") {
+        sessionStorage.removeItem(SL_HOME_FROM_IELTS);
+        pendingFocusTasksFromIeltsRef.current = true;
+        setBootComplete(true);
+      }
+    } catch {
+      /* private mode / no sessionStorage */
+    }
+  }, []);
+
+  /** 手機寬度：顯示底部固定「IELTS 備考」入口（隨視窗捲動仍貼底） */
+  const [mobileIeltsFab, setMobileIeltsFab] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const sync = () => setMobileIeltsFab(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
   }, []);
 
   useEffect(() => {
@@ -1873,6 +1901,18 @@ export default function Home() {
     }
     setLoaded(true);
   }, [syncStatus]);
+
+  /** 從 IELTS 返回：資料載入後切到「任務」分頁並捲到該區（不影響一般重新開啟網址的 Boot） */
+  useEffect(() => {
+    if (!loaded || !bootComplete) return;
+    if (!pendingFocusTasksFromIeltsRef.current) return;
+    setTab("tasks");
+    requestAnimationFrame(() => {
+      if (!pendingFocusTasksFromIeltsRef.current) return;
+      pendingFocusTasksFromIeltsRef.current = false;
+      document.getElementById("sl-main-tasks-anchor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [loaded, bootComplete]);
 
   useEffect(() => {
     if (!emergencyDismissedForToday) return;
@@ -2216,7 +2256,13 @@ export default function Home() {
     <main style={{
       background: penaltyModeActive ? "rgba(80,0,0,0.12)" : "transparent",
       minHeight:"100vh",position:"relative",
-      fontFamily:"var(--font-ui)",padding:"var(--space-lg)",
+      fontFamily:"var(--font-ui)",
+      paddingTop:"var(--space-lg)",
+      paddingLeft:"var(--space-lg)",
+      paddingRight:"var(--space-lg)",
+      paddingBottom: mobileIeltsFab && !activeTimer
+        ? "calc(var(--space-lg) + 56px + env(safe-area-inset-bottom, 0px))"
+        : "var(--space-lg)",
       animation: penaltyModeActive ? "penaltyShake 0.8s ease" : missionCompleteEffect ? "screenShake 0.5s ease" : "none",
       transition: "background 0.5s ease",
     }}>
@@ -2836,9 +2882,9 @@ export default function Home() {
               ))}
             </div>
 
-            <div style={{display:"flex",gap:"4px",marginBottom:"20px",
+            <div id="sl-main-tasks-anchor" style={{display:"flex",gap:"4px",marginBottom:"20px",
               background:"rgba(58,122,212,0.06)",borderRadius:"10px",padding:"5px",
-              border:"1px solid rgba(58,122,212,0.1)"}}>
+              border:"1px solid rgba(58,122,212,0.1)",scrollMarginTop:"12px"}}>
               {(["tasks","summary","analytics"] as const).map(t => (
                 <button key={t} onClick={()=>{ sound.playClick(); setTab(t); }} style={{
                   flex:1,padding:"10px 12px",borderRadius:"8px",border:"none",cursor:"pointer",
@@ -3534,9 +3580,69 @@ export default function Home() {
           <span style={{color:"#3A5070",fontSize:"0.6rem",letterSpacing:"3px",fontWeight:500}}>
             SOLO LEVELING EQUATION · SYSTEM v2.0
           </span>
-          <span style={{color:"#3A7AD4",fontSize:"0.6rem",animation:"blink 3s ease-in-out infinite"}}>■</span>
+          <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+            <Link
+              href="/ielts"
+              onMouseEnter={sound.playHover}
+              onClick={() => sound.playClick()}
+              style={{
+                padding:"6px 10px",
+                borderRadius:"8px",
+                border:"1px solid rgba(56,189,248,0.25)",
+                background:"rgba(56,189,248,0.08)",
+                color:"#7dd3fc",
+                fontSize:"0.6rem",
+                letterSpacing:"2px",
+                fontWeight:700,
+                textDecoration:"none",
+                fontFamily:"var(--font-system)",
+              }}
+              title="前往 IELTS 衝刺備考（學習模式）"
+            >
+              IELTS 備考
+            </Link>
+            <span style={{color:"#3A7AD4",fontSize:"0.6rem",animation:"blink 3s ease-in-out infinite"}}>■</span>
+          </div>
         </div>
       </div>
+
+      {mobileIeltsFab && !activeTimer && (
+        <Link
+          href="/ielts"
+          prefetch
+          onMouseEnter={sound.playHover}
+          onTouchStart={() => sound.playHover()}
+          onClick={() => sound.playClick()}
+          aria-label="前往 IELTS 衝刺備考"
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "max(12px, env(safe-area-inset-bottom, 0px))",
+            transform: "translateX(-50%)",
+            zIndex: 130,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            padding: "12px 22px",
+            borderRadius: "999px",
+            border: "1px solid rgba(56,189,248,0.45)",
+            background: "rgba(8,12,24,0.88)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+            color: "#E0F2FE",
+            fontSize: "0.72rem",
+            fontWeight: 700,
+            letterSpacing: "0.12em",
+            textDecoration: "none",
+            fontFamily: "var(--font-system)",
+            WebkitTapHighlightColor: "transparent",
+            touchAction: "manipulation",
+          }}
+        >
+          <span style={{ opacity: 0.9 }}>📖</span>
+          <span>IELTS 備考</span>
+        </Link>
+      )}
     </main>
       )}
     </>
