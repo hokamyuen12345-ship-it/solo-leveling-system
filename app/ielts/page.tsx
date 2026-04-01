@@ -3,17 +3,41 @@
 import Link from "next/link";
 import {
   type CSSProperties,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { FlashcardQuiz } from "./flashcard-quiz";
 import { ScoreTrendChart } from "./score-trend-chart";
-import { useIELTSStore, type DayTask, type FlashcardCategory, type IELTSSection } from "./store";
+import { useIELTSStore, type DayTask, type Flashcard, type FlashcardCategory, type IELTSSection } from "./store";
 
 const SL_HOME_FROM_IELTS = "sl_home_from_ielts_v1";
+
+/**
+ * 掛到 body：避免放在帶 transform 的 .ielts-page-panel 內時，fixed 底欄變成相對面板定位而表單被裁切／看不到。
+ */
+function IeltsSheetPortal({ themeDark, children }: { themeDark: boolean; children: ReactNode }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="ielts-root"
+      data-theme={themeDark ? "dark" : undefined}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        pointerEvents: "none",
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
 
 const TABS: { id: IELTSSection; label: string; icon: string }[] = [
   { id: "today", label: "今日", icon: "◆" },
@@ -992,6 +1016,30 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
   const [meaning, setMeaning] = useState("");
   const [example, setExample] = useState("");
   const [newCat, setNewCat] = useState<FlashcardCategory>("vocab");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [eword, setEword] = useState("");
+  const [emeaning, setEmeaning] = useState("");
+  const [eexample, setEexample] = useState("");
+  const [ecat, setEcat] = useState<FlashcardCategory>("vocab");
+  const [emastered, setEmastered] = useState(false);
+
+  const editingCard = useMemo(
+    () => (editId ? store.flashcards.find((c) => c.id === editId) ?? null : null),
+    [editId, store.flashcards],
+  );
+
+  useEffect(() => {
+    if (!editingCard) return;
+    setEword(editingCard.word);
+    setEmeaning(editingCard.meaning);
+    setEexample(editingCard.example ?? "");
+    setEcat(editingCard.category);
+    setEmastered(editingCard.mastered);
+  }, [editingCard]);
+
+  useEffect(() => {
+    if (editId && !store.flashcards.some((c) => c.id === editId)) setEditId(null);
+  }, [editId, store.flashcards]);
 
   const filtered = useMemo(() => {
     if (filter === "all") return store.flashcards;
@@ -1027,6 +1075,27 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
     setAddOpen(false);
   };
 
+  const openEdit = (c: Flashcard) => {
+    setAddOpen(false);
+    setEditId(c.id);
+  };
+
+  const saveEdit = () => {
+    if (!editingCard) return;
+    if (!eword.trim() || !emeaning.trim()) {
+      window.alert("請填寫單字與解釋。");
+      return;
+    }
+    store.updateFlashcard(editingCard.id, {
+      word: eword.trim(),
+      meaning: emeaning.trim(),
+      example: eexample.trim() || undefined,
+      category: ecat,
+      mastered: emastered,
+    });
+    setEditId(null);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <FlashcardQuiz
@@ -1055,7 +1124,15 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
         ))}
       </div>
       <div style={{ display: "flex", gap: 10 }}>
-        <button type="button" className="ielts-btn ielts-enter" style={{ ...outlineBtn(), flex: 1 }} onClick={() => setAddOpen(true)}>
+        <button
+          type="button"
+          className="ielts-btn ielts-enter"
+          style={{ ...outlineBtn(), flex: 1 }}
+          onClick={() => {
+            setEditId(null);
+            setAddOpen(true);
+          }}
+        >
           ＋ 新增單詞
         </button>
         <button type="button" className="ielts-btn ielts-enter" style={{ ...solidBtn(), flex: 1 }} onClick={startQuiz}>
@@ -1095,9 +1172,22 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
       </div>
 
       {addOpen && (
-        <>
-          <div className="ielts-sheet-backdrop" role="presentation" onClick={() => setAddOpen(false)} />
-          <div className="ielts-sheet" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+        <IeltsSheetPortal themeDark={themeDark}>
+          <div
+            className="ielts-sheet-backdrop"
+            role="presentation"
+            style={{ pointerEvents: "auto" }}
+            onClick={() => setAddOpen(false)}
+          />
+          <div
+            className="ielts-sheet"
+            style={{
+              pointerEvents: "auto",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))",
+            }}
+          >
             <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
               新增單詞
             </div>
@@ -1131,7 +1221,77 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
               </button>
             </div>
           </div>
-        </>
+        </IeltsSheetPortal>
+      )}
+
+      {editId && editingCard && (
+        <IeltsSheetPortal themeDark={themeDark}>
+          <div
+            className="ielts-sheet-backdrop"
+            role="presentation"
+            style={{ pointerEvents: "auto" }}
+            onClick={() => setEditId(null)}
+          />
+          <div
+            className="ielts-sheet"
+            style={{
+              pointerEvents: "auto",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
+              字卡設定
+            </div>
+            <p className="ielts-text-caption" style={{ marginBottom: 12, color: "var(--ielts-text-3)" }}>
+              修改此張字卡內容；儲存後會立即套用在列表與測驗。
+            </p>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              分類
+              <select className="ielts-input" value={ecat} onChange={(e) => setEcat(e.target.value as FlashcardCategory)}>
+                <option value="vocab">詞彙</option>
+                <option value="writing">寫作</option>
+                <option value="speaking">口說</option>
+                <option value="grammar">語法</option>
+              </select>
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              單字 / 片語
+              <input className="ielts-input" value={eword} onChange={(e) => setEword(e.target.value)} placeholder="例如：elaborate" />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              解釋
+              <input className="ielts-input" value={emeaning} onChange={(e) => setEmeaning(e.target.value)} placeholder="中文或英文釋義" />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              例句（選填）
+              <textarea className="ielts-input" style={{ minHeight: 72 }} value={eexample} onChange={(e) => setEexample(e.target.value)} />
+            </label>
+            <label
+              className="ielts-text-caption"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+            >
+              <input type="checkbox" checked={emastered} onChange={(e) => setEmastered(e.target.checked)} style={{ width: 18, height: 18, accentColor: "var(--ielts-accent)" }} />
+              標記為已掌握
+            </label>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={() => setEditId(null)}>
+                取消
+              </button>
+              <button type="button" className="ielts-btn" style={{ ...solidBtn(), flex: 1 }} onClick={saveEdit}>
+                儲存
+              </button>
+            </div>
+          </div>
+        </IeltsSheetPortal>
       )}
 
       {filtered.length === 0 ? (
@@ -1172,6 +1332,23 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
               ) : null}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+              <button
+                type="button"
+                className="ielts-btn"
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "1px solid var(--ielts-accent)",
+                  color: "var(--ielts-accent)",
+                  background: "transparent",
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                }}
+                onClick={() => openEdit(c)}
+              >
+                設定
+              </button>
               <button
                 type="button"
                 className="ielts-btn"
@@ -1607,9 +1784,17 @@ function SettingsTab({
       </div>
 
       {clearSheetOpen && (
-        <>
-          <div className="ielts-sheet-backdrop" role="presentation" onClick={() => setClearSheetOpen(false)} />
-          <div className="ielts-sheet">
+        <IeltsSheetPortal themeDark={themeDark}>
+          <div
+            className="ielts-sheet-backdrop"
+            role="presentation"
+            style={{ pointerEvents: "auto" }}
+            onClick={() => setClearSheetOpen(false)}
+          />
+          <div
+            className="ielts-sheet"
+            style={{ pointerEvents: "auto", paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))" }}
+          >
             <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
               清除所有數據？
             </div>
@@ -1633,7 +1818,7 @@ function SettingsTab({
               </button>
             </div>
           </div>
-        </>
+        </IeltsSheetPortal>
       )}
     </div>
   );

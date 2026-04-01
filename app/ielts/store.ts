@@ -472,6 +472,26 @@ export function useIELTSStore() {
     setFlashcards((prev) => prev.map((c) => (c.id === id ? { ...c, mastered } : c)));
   }, []);
 
+  const updateFlashcard = useCallback(
+    (
+      id: string,
+      data: Pick<Flashcard, "word" | "meaning" | "category" | "mastered"> & { example?: string },
+    ) => {
+      const word = data.word.trim();
+      const meaning = data.meaning.trim();
+      if (!word || !meaning) return;
+      const example = data.example?.trim() ? data.example.trim() : undefined;
+      setFlashcards((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? { ...c, word, meaning, example, category: data.category, mastered: data.mastered }
+            : c,
+        ),
+      );
+    },
+    [],
+  );
+
   const clearAllLocalData = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
@@ -589,6 +609,7 @@ export function useIELTSStore() {
     removeFlashcard,
     toggleFlashcardMastered,
     setFlashcardMastered,
+    updateFlashcard,
     clearAllLocalData,
     exportAll,
     importAll,
