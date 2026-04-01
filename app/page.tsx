@@ -1,11 +1,13 @@
 "use client";
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, type ChangeEvent } from "react";
 import type { DragEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import { getSupabase, SYNC_KEYS } from "@/lib/supabase";
 import { expBarFromTotal, levelFromTotalExp } from "@/lib/leveling";
+import { MAX_QUEST_EXP, formatExpValue, formatSignedTodayExp } from "@/lib/formatExp";
+import { useAvatar } from "@/hooks/useAvatar";
 import type { User } from "@supabase/supabase-js";
 
 /** 從 /ielts 按「返回主頁」時寫入，首頁讀取後略過 Boot 並聚焦任務分頁（重新開啟網址不會帶此旗標） */
@@ -1064,8 +1066,10 @@ function QuestCard({
       {!done && (
         <div style={{
           position: "absolute", inset: 0, pointerEvents: "none",
-          background: "linear-gradient(90deg, transparent 0%, transparent 40%, rgba(58,122,212,0.12) 50%, transparent 60%, transparent 100%)",
-          backgroundSize: "200% 100%", animation: "shimmerSweep 3s ease-in-out infinite",
+          backgroundImage: "linear-gradient(90deg, transparent 0%, transparent 40%, rgba(58,122,212,0.12) 50%, transparent 60%, transparent 100%)",
+          backgroundSize: "200% 100%",
+          backgroundRepeat: "no-repeat",
+          animation: "shimmerSweep 3s ease-in-out infinite",
         }} />
       )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", position: "relative", zIndex: 1 }}>
@@ -1078,7 +1082,7 @@ function QuestCard({
             <span>
               {shouldUseInstantComplete(quest) ? "模式: 一鍵完成" : `Duration: ${quest.minutes} min`}
             </span>
-            <span className="font-mono-num" style={{ color: done ? "#3A5A4A" : "#2ECC71" }}>Reward: +{quest.exp} EXP</span>
+            <span className="font-mono-num" style={{ color: done ? "#3A5A4A" : "#2ECC71" }}>Reward: +{formatExpValue(quest.exp)} EXP</span>
           </div>
           {hover && !done && (
             <div style={{ marginTop: "6px", fontSize: "0.5rem", color: "rgba(58,122,212,0.6)", letterSpacing: "1px", fontFamily: "var(--font-system)" }}>
@@ -1581,7 +1585,7 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
           </div>
 
           <div style={{marginTop:"28px",color:"#64748b",fontSize:"0.55rem",letterSpacing:"3px",fontWeight:400,textAlign:"center"}}>
-            REWARD: <span style={{color:rankColor,fontWeight:600,textShadow:`0 0 10px ${rankGlow}`}}>+{quest.exp} pt</span>
+            REWARD: <span style={{color:rankColor,fontWeight:600,textShadow:`0 0 10px ${rankGlow}`}}>+{formatExpValue(quest.exp)} pt</span>
             &nbsp;·&nbsp;<span style={{color:rankColor,opacity:0.9,textShadow:`0 0 8px ${rankGlow}`}}>{quest.attr} +3</span>
           </div>
           </div>
@@ -1611,7 +1615,7 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
             marginBottom:"40px",marginTop:"16px",flexWrap:"wrap"}}>
             <div style={{textAlign:"center"}}>
               <div style={{color:rankColor,fontSize:"1.5rem",fontWeight:"800"}}>
-                +{quest.type === "boss" ? quest.exp : Math.round(quest.exp * (1 + skillBonusPct / 100))}
+                +{formatExpValue(quest.type === "boss" ? quest.exp : Math.round(quest.exp * (1 + skillBonusPct / 100)))}
               </div>
               <div style={{color:"#64748b",fontSize:"0.55rem",letterSpacing:"2px"}}>pt</div>
               {skillBonusPct > 0 && quest.type !== "boss" && (
@@ -1687,6 +1691,23 @@ export default function Home() {
   /** 從 IELTS 返回：略過 Boot 後，等 loaded 再捲到任務區 */
   const pendingFocusTasksFromIeltsRef = useRef(false);
   const sound = useSound();
+  const { avatarDataUrl, applyFile, clear: clearAvatar } = useAvatar(loaded, syncStatus);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  const onAvatarFileChange = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      e.target.value = "";
+      if (!f) return;
+      try {
+        await applyFile(f);
+        sound.playClick();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "上傳失敗";
+        setSystemHud({ id: `av-${Date.now()}`, title: "頭像", subtitle: msg });
+      }
+    },
+    [applyFile, sound],
+  );
   const systemVoice = useSystemVoice();
 
   // ===== 任務自訂設定（localStorage）=====
@@ -2288,7 +2309,7 @@ export default function Home() {
     sound.playSuccess();
     systemVoice.speak("MISSION COMPLETE");
     systemVoice.speak("EXPERIENCE GAINED");
-    setSystemHud({ id: `mc-${Date.now()}`, title: "MISSION COMPLETE", subtitle: `+${actualExp} EXP` });
+    setSystemHud({ id: `mc-${Date.now()}`, title: "MISSION COMPLETE", subtitle: `+${formatExpValue(actualExp)} EXP` });
     setMissionCompleteEffect({ exp: actualExp, questLabel: q.label, questId: q.id });
     setFloatingExp({ value: actualExp, key: Date.now() });
     setTimeout(() => setMissionCompleteEffect(null), 2200);
@@ -2562,7 +2583,7 @@ export default function Home() {
           <div style={{textAlign:"center",animation:"completePop 0.6s ease forwards",fontFamily:"var(--font-system)"}}>
             <div style={{fontSize:"0.7rem",color:"var(--accent-blue)",letterSpacing:"8px",marginBottom:"12px"}}>── SYSTEM MESSAGE ──</div>
             <div style={{fontSize:"2.2rem",fontWeight:700,color:"var(--accent-gold)",textShadow:"0 0 30px var(--accent-gold), 0 0 60px var(--accent-gold-glow)",letterSpacing:"4px"}}>MISSION COMPLETE</div>
-            <div style={{fontSize:"1.4rem",color:"var(--accent-gold)",marginTop:"12px",fontWeight:700,textShadow:"0 0 20px var(--accent-gold-glow)"}}>+{missionCompleteEffect.exp} EXP</div>
+            <div style={{fontSize:"1.4rem",color:"var(--accent-gold)",marginTop:"12px",fontWeight:700,textShadow:"0 0 20px var(--accent-gold-glow)"}}>+{formatExpValue(missionCompleteEffect.exp)} EXP</div>
           </div>
           {[...Array(16)].map((_,i)=>(
             <div key={i} style={{
@@ -2942,15 +2963,113 @@ export default function Home() {
                       <div style={{borderRadius:"50%",padding: isMonarch ? "4px" : "3px",
                         background: isMetallic ? "linear-gradient(135deg, rgba(180,160,120,0.5), rgba(100,80,60,0.3))" : `linear-gradient(135deg,${rc.color},transparent)`,
                         boxShadow:`0 0 30px ${rc.glow}`}}>
-                        <div style={{borderRadius:"50%",overflow:"hidden",
-                          width:"90px",height:"90px",background:"var(--bg-primary)"}}>
-                          <Image src="/avatar.jpg" alt="avatar" width={90} height={90}
-                            style={{objectFit:"cover",width:"100%",height:"100%",filter:"brightness(0.95)"}}/>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          title="點擊上傳頭像"
+                          onClick={() => avatarFileInputRef.current?.click()}
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Enter" || ev.key === " ") {
+                              ev.preventDefault();
+                              avatarFileInputRef.current?.click();
+                            }
+                          }}
+                          style={{
+                            borderRadius: "50%",
+                            overflow: "hidden",
+                            width: "90px",
+                            height: "90px",
+                            background: "var(--bg-primary)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {avatarDataUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- 使用者上傳 data URL
+                            <img
+                              src={avatarDataUrl}
+                              alt="頭像"
+                              width={90}
+                              height={90}
+                              style={{
+                                objectFit: "cover",
+                                width: "100%",
+                                height: "100%",
+                                display: "block",
+                                filter: "brightness(0.95)",
+                              }}
+                            />
+                          ) : (
+                            <Image
+                              src="/avatar.jpg"
+                              alt="avatar"
+                              width={90}
+                              height={90}
+                              style={{ objectFit: "cover", width: "100%", height: "100%", filter: "brightness(0.95)" }}
+                            />
+                          )}
                         </div>
                       </div>
                     </div>
                   );
                 })()}
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+                  style={{ display: "none" }}
+                  onChange={onAvatarFileChange}
+                />
+                <div
+                  style={{
+                    marginTop: "10px",
+                    display: "flex",
+                    justifyContent: "center",
+                    gap: "10px",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    style={{
+                      background: "rgba(58,122,212,0.2)",
+                      border: "1px solid rgba(58,122,212,0.45)",
+                      color: "#A5D4F7",
+                      fontSize: "0.52rem",
+                      letterSpacing: "0.12em",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontWeight: 700,
+                    }}
+                  >
+                    上傳頭像
+                  </button>
+                  {avatarDataUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearAvatar();
+                        sound.playClick();
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "1px solid rgba(148,163,184,0.35)",
+                        color: "#94A3B8",
+                        fontSize: "0.52rem",
+                        letterSpacing: "0.08em",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      還原預設
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div style={{textAlign:"center",marginBottom:"20px"}}>
@@ -3018,8 +3137,10 @@ export default function Home() {
                 <div className={expPct > 0 ? "growth-bar-pulse" : ""} style={{
                   ["--exp-color" as string]: rc.color,
                   ["--exp-glow" as string]: rc.glow,
-                  background: `linear-gradient(90deg, ${rc.color}44, ${rc.color}, ${rc.color}99, ${rc.color})`,
+                  backgroundImage: `linear-gradient(90deg, ${rc.color}44, ${rc.color}, ${rc.color}99, ${rc.color})`,
                   backgroundSize: "200% 100%",
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "0% 50%",
                   width: `${expPct}%`,
                   height: "100%",
                   borderRadius: "4px",
@@ -3029,11 +3150,22 @@ export default function Home() {
                 }}/>
                 )}
               </div>
-              <div className="font-mono-num" style={{display:"flex",justifyContent:"space-between",marginTop:"6px",color:"#3A5070",fontSize:"0.55rem"}}>
+              <div className="font-mono-num" style={{display:"flex",flexDirection:"column",gap:"4px",marginTop:"6px",color:"#3A5070",fontSize:"0.55rem"}}>
                 {penaltyModeActive ? <span>---</span> : (
                   <>
-                    <span><span style={{color:rc.color,fontWeight:600}}>{Math.round(currentExp - lvExp)}</span> / {nextExp - lvExp} EXP</span>
-                    <span>{nextExp - lvExp} to next</span>
+                    <div style={{ color: "#5A6A7A", fontSize: "0.5rem" }}>
+                      累積 <span style={{ color: rc.color, fontWeight: 600 }}>{formatExpValue(currentExp)}</span> EXP
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                      <span>
+                        本級 <span style={{ color: rc.color, fontWeight: 600 }}>{formatExpValue(currentExp - lvExp)}</span>
+                        {" / "}
+                        {formatExpValue(nextExp - lvExp)}
+                      </span>
+                      <span>
+                        尚差 <span style={{ color: rc.color, fontWeight: 600 }}>{formatExpValue(Math.max(0, nextExp - currentExp))}</span> EXP 升級
+                      </span>
+                    </div>
                   </>
                 )}
               </div>
@@ -3042,7 +3174,7 @@ export default function Home() {
               <div key={floatingExp.key} style={{
                 position:"absolute",right:"0",top:"8px",color:"var(--accent-gold)",fontSize:"0.8rem",fontWeight:700,pointerEvents:"none",zIndex:10,
                 animation:"expFloatUp 1.2s ease forwards",textShadow:"0 0 10px var(--accent-gold-glow)",
-              }} className="font-mono-num">+{floatingExp.value} EXP</div>
+              }} className="font-mono-num">+{formatExpValue(floatingExp.value)} EXP</div>
             )}
             {/* 微縮 HUD 標籤 */}
             <div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"20px"}}>
@@ -3056,7 +3188,13 @@ export default function Home() {
                 }}>
                   <span style={{color:"#7A9ABB",fontSize:"0.5rem",letterSpacing:"2px"}}>{s.label}</span>
                   <span className="font-mono-num" style={{color:s.color,fontSize:"1rem",fontWeight:700}}>
-                    {penaltyModeActive && s.label==="EXP" ? "???" : s.value != null ? `${s.value}${s.num}` : <CountUp target={s.num} color={s.color} duration={800}/>}
+                    {penaltyModeActive && s.label === "EXP"
+                      ? "???"
+                      : s.label === "EXP"
+                        ? formatSignedTodayExp(todayExp)
+                        : s.value != null
+                          ? `${s.value}${s.num}`
+                          : <CountUp target={s.num} color={s.color} duration={800}/>}
                   </span>
                   {s.label==="STREAK" && streak>0 && <span style={{fontSize:"0.75rem"}}>🔥</span>}
                 </div>
@@ -3605,7 +3743,7 @@ export default function Home() {
                         if (editingQuestId == null) return;
                         sound.playClick();
                         const mins = Math.max(1, Math.min(240, Number.parseInt(editingMinutes, 10) || 0));
-                        const exp = Math.max(0, Math.min(9999, Number.parseInt(editingExp, 10) || 0));
+                        const exp = Math.max(0, Math.min(MAX_QUEST_EXP, Number.parseInt(editingExp, 10) || 0));
                         if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
                           setCustomQuests((prev) =>
                             prev.map((c) =>
@@ -3840,7 +3978,7 @@ export default function Home() {
                         onClick={() => {
                           if (!addQuestZone) return;
                           sound.playClick();
-                          const exp = Math.max(0, Math.min(9999, Number.parseInt(addQuestExp, 10) || 0));
+                          const exp = Math.max(0, Math.min(MAX_QUEST_EXP, Number.parseInt(addQuestExp, 10) || 0));
                           const minutes = Math.max(1, Math.min(240, Number.parseInt(addQuestMinutes, 10) || 25));
                           const nextId =
                             customQuests.length === 0
@@ -3914,7 +4052,7 @@ export default function Home() {
                   {[
                     { label: "RANK", value: `${rank}-RANK`, color: rc.color },
                     { label: "LEVEL", num: level, color: "#3F8CFF" },
-                    { label: "EXP", value: `${todayExp>=0?"+":""}${todayExp}`, color: todayExp>=0 ? "#22C55E" : "#EF4444" },
+                    { label: "EXP", value: formatSignedTodayExp(todayExp), color: todayExp>=0 ? "#22C55E" : "#EF4444" },
                     { label: "STREAK", num: streak, color: getStreakColor(streak) },
                   ].map((s,i) => (
                     <div key={s.label} style={{
@@ -3990,7 +4128,7 @@ export default function Home() {
                             borderLeft:"3px solid rgba(74,222,128,0.5)",background:"rgba(255,255,255,0.02)",
                           }}>
                             <span style={{color:"#A7F3D0",fontSize:"0.78rem",fontWeight:500}}>✓ {q.label}</span>
-                            <span style={{padding:"4px 10px",borderRadius:"8px",background:"rgba(34,197,94,0.15)",border:"1px solid rgba(74,222,128,0.35)",color:"#86EFAC",fontSize:"0.7rem",fontWeight:700}}>+{q.exp} EXP</span>
+                            <span style={{padding:"4px 10px",borderRadius:"8px",background:"rgba(34,197,94,0.15)",border:"1px solid rgba(74,222,128,0.35)",color:"#86EFAC",fontSize:"0.7rem",fontWeight:700}}>+{formatExpValue(q.exp)} EXP</span>
                           </div>
                         ))}
                     </div>

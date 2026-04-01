@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, type ChangeEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { expBarFromTotal, levelFromTotalExp } from "@/lib/leveling";
+import { useAvatar } from "@/hooks/useAvatar";
 
 // ===== 型別與共用工具 =====
 type AttrKey = "PHY" | "INT" | "EXE" | "RES" | "SOC";
@@ -408,6 +409,22 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTimer, setActiveTimer] = useState<typeof QUESTS[0] | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { avatarDataUrl, applyFile, clear: clearAvatar } = useAvatar(loaded);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  const onAvatarFileChange = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      e.target.value = "";
+      if (!f) return;
+      try {
+        await applyFile(f);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "上傳失敗";
+        window.alert(msg);
+      }
+    },
+    [applyFile],
+  );
 
   useEffect(() => {
     const today = getToday();
@@ -650,12 +667,97 @@ export default function Home() {
                   <div style={{borderRadius:"50%",padding:"3px",
                     background:`linear-gradient(135deg,${rc.color},transparent)`,
                     boxShadow:`0 0 30px ${rc.glow}`}}>
-                    <div style={{borderRadius:"50%",overflow:"hidden",
-                      width:"90px",height:"90px",background:"#0a0f1a"}}>
-                      <Image src="/avatar.jpg" alt="avatar" width={90} height={90}
-                        style={{objectFit:"cover",width:"100%",height:"100%",filter:"brightness(0.95)"}}/>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      title="點擊上傳頭像"
+                      onClick={() => avatarFileInputRef.current?.click()}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          avatarFileInputRef.current?.click();
+                        }
+                      }}
+                      style={{
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        width: "90px",
+                        height: "90px",
+                        background: "#0a0f1a",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {avatarDataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- 使用者上傳 data URL
+                        <img
+                          src={avatarDataUrl}
+                          alt="頭像"
+                          width={90}
+                          height={90}
+                          style={{
+                            objectFit: "cover",
+                            width: "100%",
+                            height: "100%",
+                            display: "block",
+                            filter: "brightness(0.95)",
+                          }}
+                        />
+                      ) : (
+                        <Image
+                          src="/avatar.jpg"
+                          alt="avatar"
+                          width={90}
+                          height={90}
+                          style={{ objectFit: "cover", width: "100%", height: "100%", filter: "brightness(0.95)" }}
+                        />
+                      )}
                     </div>
                   </div>
+                </div>
+                <input
+                  ref={avatarFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+                  style={{ display: "none" }}
+                  onChange={onAvatarFileChange}
+                />
+                <div style={{ marginTop: "10px", display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    style={{
+                      background: "rgba(58,122,212,0.2)",
+                      border: "1px solid rgba(58,122,212,0.45)",
+                      color: "#A5D4F7",
+                      fontSize: "0.52rem",
+                      letterSpacing: "0.12em",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontWeight: 700,
+                    }}
+                  >
+                    上傳頭像
+                  </button>
+                  {avatarDataUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => clearAvatar()}
+                      style={{
+                        background: "transparent",
+                        border: "1px solid rgba(148,163,184,0.35)",
+                        color: "#94A3B8",
+                        fontSize: "0.52rem",
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      還原預設
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
