@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
 import { getSupabase, SYNC_KEYS } from "@/lib/supabase";
+import { expBarFromTotal, levelFromTotalExp } from "@/lib/leveling";
 import type { User } from "@supabase/supabase-js";
 
 /** 從 /ielts 按「返回主頁」時寫入，首頁讀取後略過 Boot 並聚焦任務分頁（重新開啟網址不會帶此旗標） */
@@ -222,7 +223,7 @@ type AttrKey = "PHY" | "INT" | "EXE" | "RES" | "SOC";
 type QuestType = "daily" | "challenge" | "hidden" | "boss" | "emergency";
 
 type QuestCompletionMode = "timer" | "instant";
-type TaskSectionId = "daily" | "support" | "boss" | "emergency";
+type TaskSectionId = "daily" | "boss" | "emergency";
 
 interface Quest {
   id: number;
@@ -251,7 +252,7 @@ const CUSTOM_QUESTS_KEY = "slq_custom_quests_v1";
 const TASK_SECTIONS_PREFS_KEY = "slq_task_sections_v1";
 const HIDDEN_QUEST_IDS_KEY = "slq_hidden_quest_ids_v1";
 
-const DEFAULT_SECTION_ORDER: TaskSectionId[] = ["daily", "support", "boss", "emergency"];
+const DEFAULT_SECTION_ORDER: TaskSectionId[] = ["daily", "boss", "emergency"];
 
 function normalizeSectionOrder(raw: unknown): TaskSectionId[] {
   if (!Array.isArray(raw)) return [...DEFAULT_SECTION_ORDER];
@@ -265,10 +266,17 @@ function normalizeSectionOrder(raw: unknown): TaskSectionId[] {
 function zoneToQuestType(zone: TaskSectionId): QuestType {
   switch (zone) {
     case "daily": return "daily";
-    case "support": return "hidden";
     case "boss": return "boss";
     case "emergency": return "emergency";
   }
+}
+
+/** 舊版「支援任務」區已移除：JSON 可能仍含 zone "support"，遷移到每日區 */
+function migrateCustomQuestStored(c: CustomQuestStored): CustomQuestStored {
+  const z = (c as unknown as { zone?: string }).zone;
+  const next: TaskSectionId =
+    z === "support" ? "daily" : z === "boss" ? "boss" : z === "emergency" ? "emergency" : "daily";
+  return { ...c, zone: next };
 }
 
 function customStoredToQuest(c: CustomQuestStored): Quest {
@@ -797,7 +805,6 @@ function getTimerThemeColor(quest: Quest, aiQuestIds: number[]): { color: string
   return { color: QUEST_TYPE_COLOR[quest.type], glow: QUEST_TYPE_GLOW[quest.type] };
 }
 
-const LEVEL_TABLE = [0,100,250,450,700,1000,1400,1900,2500,3200,4200];
 const BASE_EXP = 700;
 const BASE_ATTRS: Record<AttrKey,number> = { PHY:0, INT:0, EXE:0, RES:0, SOC:0 };
 
@@ -1643,6 +1650,7 @@ export default function Home() {
   const [tab, setTab]             = useState<"tasks"|"analytics">("tasks");
   const [expRange, setExpRange]   = useState<"7"|"14"|"30">("14");
   const [showLevelUp, setShowLevelUp] = useState(false);
+  const [levelUpRange, setLevelUpRange] = useState<{ from: number; to: number } | null>(null);
   const [loaded, setLoaded]       = useState(false);
   const [syncStatus, setSyncStatus] = useState<"pending" | "local" | "synced">("pending");
   const [user, setUser]           = useState<User | null>(null);
@@ -1777,7 +1785,10 @@ export default function Home() {
     if (typeof window === "undefined") return;
     try {
       const c = localStorage.getItem(CUSTOM_QUESTS_KEY);
-      if (c) setCustomQuests(JSON.parse(c) as CustomQuestStored[]);
+      if (c) {
+        const parsed = JSON.parse(c) as CustomQuestStored[];
+        if (Array.isArray(parsed)) setCustomQuests(parsed.map(migrateCustomQuestStored));
+      }
       const h = localStorage.getItem(HIDDEN_QUEST_IDS_KEY);
       if (h) {
         const parsed = JSON.parse(h) as unknown;
@@ -2186,10 +2197,7 @@ export default function Home() {
     + bossExpToday
     + DEBUFFS.filter(d=>debuffs.includes(d.id)).reduce((s,d)=>s+d.exp,0);
   const currentExp = Math.max(0, BASE_EXP + todayExp);
-  const level = LEVEL_TABLE.reduce((lv,req,i) => currentExp>=req ? i+1 : lv, 1);
-  const lvExp   = LEVEL_TABLE[level-1] ?? 0;
-  const nextExp = LEVEL_TABLE[level]   ?? 9999;
-  const expPct  = Math.min(100, ((currentExp-lvExp)/(nextExp-lvExp))*100);
+  const { level, lvExp, nextExp, expPct } = expBarFromTotal(currentExp);
   const rank = getRank(level);
   const rc = RANK_CONFIG[rank];
   const prevRankRef = useRef(rank);
@@ -2297,13 +2305,17 @@ export default function Home() {
       EMERGENCY_QUESTS.filter((x) => next.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
       bossExpToday +
       DEBUFFS.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
-    const newLv = LEVEL_TABLE.reduce((lv, req, i) => (nx >= req ? i + 1 : lv), 1);
+    const newLv = levelFromTotalExp(nx);
     if (newLv > level)
       setTimeout(() => {
         systemVoice.speak("LEVEL UP");
-        setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${newLv - 1} → Lv.${newLv}` });
+        setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${level} → Lv.${newLv}` });
+        setLevelUpRange({ from: level, to: newLv });
         setShowLevelUp(true);
-        setTimeout(() => setShowLevelUp(false), 3000);
+        setTimeout(() => {
+          setShowLevelUp(false);
+          setLevelUpRange(null);
+        }, 3000);
       }, 100);
 
     appendMissionHistory({
@@ -2361,13 +2373,17 @@ export default function Home() {
         aiQuests.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
         EMERGENCY_QUESTS.filter((x) => completed.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
         DEBUFFS.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
-      const newLv = LEVEL_TABLE.reduce((lv, req, i) => (nx >= req ? i + 1 : lv), 1);
+      const newLv = levelFromTotalExp(nx);
       if (newLv > level)
         setTimeout(() => {
           systemVoice.speak("LEVEL UP");
-          setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${newLv - 1} → Lv.${newLv}` });
+          setSystemHud({ id: `lv-${Date.now()}`, title: "LEVEL UP", subtitle: `Lv.${level} → Lv.${newLv}` });
+          setLevelUpRange({ from: level, to: newLv });
           setShowLevelUp(true);
-          setTimeout(() => setShowLevelUp(false), 3000);
+          setTimeout(() => {
+            setShowLevelUp(false);
+            setLevelUpRange(null);
+          }, 3000);
         }, 100);
       return;
     }
@@ -2669,7 +2685,7 @@ export default function Home() {
               LEVEL UP
             </div>
             <div className="font-mono-num" style={{fontSize:"1.5rem",color:"#ffffff",marginTop:"12px",letterSpacing:"2px"}}>
-              Lv.{level-1} → Lv.{level}
+              Lv.{levelUpRange?.from ?? level} → Lv.{levelUpRange?.to ?? level}
             </div>
             <div style={{fontSize:"0.65rem",color:rc.color,marginTop:"20px",letterSpacing:"4px"}}>
               {rc.next}
@@ -3067,13 +3083,23 @@ export default function Home() {
 
             {tab==="tasks" && (() => {
                 const topPriorityQuests = [...questsBase.filter(q => q.type === "challenge")].sort((a, b) => b.exp - a.exp).slice(0, 3);
-                const dailySystemQuests = [...questsBase.filter(q => q.type === "daily")].sort((a, b) => b.exp - a.exp);
                 const hidUi = new Set(hiddenQuestIds);
-                const supportQuests = [
-                  ...questsBase.filter(q => q.type === "hidden"),
+                const supplementalDaily = [
+                  ...questsBase.filter((q) => q.type === "hidden"),
                   ...(dailyRandomHiddenQuest && !hidUi.has(dailyRandomHiddenQuest.id) ? [dailyRandomHiddenQuest] : []),
                   ...aiQuests.filter((q) => !hidUi.has(q.id)),
-                ].sort((a, b) => b.exp - a.exp);
+                ];
+                const seenDailyId = new Set<number>();
+                const dailySystemQuests = [
+                  ...questsBase.filter((q) => q.type === "daily"),
+                  ...supplementalDaily,
+                ]
+                  .filter((q) => {
+                    if (seenDailyId.has(q.id)) return false;
+                    seenDailyId.add(q.id);
+                    return true;
+                  })
+                  .sort((a, b) => b.exp - a.exp);
                 return (
               <div style={{animation:"fadeUp 0.35s ease forwards"}}>
                 {/* TOP PRIORITY MISSIONS — max 3, largest cards, bright system blue */}
@@ -3226,6 +3252,7 @@ export default function Home() {
                                 onDelete={q.id >= CUSTOM_QUEST_MIN_ID ? () => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id)) : undefined}
                                 onHoverSound={sound.playHover}
                                 onClickSound={sound.playClick}
+                                isAi={aiQuests.some((a) => a.id === q.id)}
                                 idx={idx}
                                 primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
                               />
@@ -3234,38 +3261,8 @@ export default function Home() {
                         </>,
                         "#4A9A8A",
                         "DAILY SYSTEM TASKS",
-                        "每日習慣 · 收合標題列 · 左側 ⋮⋮ 拖曳調整區塊順序",
+                        "每日習慣 · 含輔助與 AI 建議任務 · 收合標題列 · 左側 ⋮⋮ 拖曳調整區塊順序",
                         "#4A9A8A",
-                      );
-                    }
-                    if (sid === "support") {
-                      return wrap(
-                        <>
-                          {supportQuests.length === 0 ? (
-                            <div style={{ color: "#5A6A7A", fontSize: "0.65rem", padding: "8px 4px" }}>尚無支援任務 · 點「+ 新增」加入自訂輔助任務</div>
-                          ) : null}
-                          {supportQuests.map((q, idx) => (
-                            <QuestCard
-                              key={`support-${q.id}-${idx}`}
-                              quest={q}
-                              accentColor="#6B8AAF"
-                              done={completed.includes(q.id)}
-                              onStart={()=>toggle(q.id)}
-                              onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
-                              onSettings={() => openQuestSettings(q)}
-                              onDelete={q.id >= CUSTOM_QUEST_MIN_ID ? () => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id)) : undefined}
-                              onHoverSound={sound.playHover}
-                              onClickSound={sound.playClick}
-                              isAi={aiQuests.some(a=>a.id===q.id)}
-                              idx={idx}
-                              primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
-                            />
-                          ))}
-                        </>,
-                        "#6B8AAF",
-                        "SUPPORT MISSIONS",
-                        "輔助任務 · 可與 AI 建議並列",
-                        "#6B8AAF",
                       );
                     }
                     if (sid === "boss") {
@@ -3702,7 +3699,6 @@ export default function Home() {
                     <div style={{ fontSize: "0.85rem", marginTop: 6, color: "#A5D4F7" }}>
                       區域：
                       {addQuestZone === "daily" && "每日系統任務"}
-                      {addQuestZone === "support" && "支援任務"}
                       {addQuestZone === "boss" && "Boss Raid"}
                       {addQuestZone === "emergency" && "緊急任務"}
                     </div>

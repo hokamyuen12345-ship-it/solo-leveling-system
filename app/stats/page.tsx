@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { expBarFromTotal, levelFromTotalExp } from "@/lib/leveling";
 
 // ===== 型別與共用工具 =====
 type AttrKey = "PHY" | "INT" | "EXE" | "RES" | "SOC";
@@ -82,7 +83,6 @@ const DEBUFFS = [
   { id: 11, label: "拖延重要事情",   exp: -15 },
 ];
 
-const LEVEL_TABLE = [0,100,250,450,700,1000,1400,1900,2500,3200,4200];
 const BASE_EXP = 700;
 const BASE_ATTRS: Record<AttrKey,number> = { PHY:0, INT:0, EXE:0, RES:0, SOC:0 };
 
@@ -403,6 +403,7 @@ export default function Home() {
   const [streak,    setStreak]    = useState(0);
   const [tab, setTab]             = useState<"tasks"|"summary">("tasks");
   const [showLevelUp, setShowLevelUp] = useState(false);
+  const [levelUpRange, setLevelUpRange] = useState<{ from: number; to: number } | null>(null);
   const [loaded, setLoaded]       = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTimer, setActiveTimer] = useState<typeof QUESTS[0] | null>(null);
@@ -455,10 +456,7 @@ export default function Home() {
   const todayExp = QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
     + DEBUFFS.filter(d=>debuffs.includes(d.id)).reduce((s,d)=>s+d.exp,0);
   const currentExp = Math.max(0, BASE_EXP + todayExp);
-  const level = LEVEL_TABLE.reduce((lv,req,i) => currentExp>=req ? i+1 : lv, 1);
-  const lvExp   = LEVEL_TABLE[level-1] ?? 0;
-  const nextExp = LEVEL_TABLE[level]   ?? 9999;
-  const expPct  = Math.min(100, ((currentExp-lvExp)/(nextExp-lvExp))*100);
+  const { level, lvExp, nextExp, expPct } = expBarFromTotal(currentExp);
   const rank = getRank(level);
   const rc = RANK_CONFIG[rank];
 
@@ -478,8 +476,16 @@ export default function Home() {
     setStreak(newStreak);
     const nx = BASE_EXP + QUESTS.filter(x=>next.includes(x.id)).reduce((s,x)=>s+x.exp,0)
       + DEBUFFS.filter(d=>debuffs.includes(d.id)).reduce((s,d)=>s+d.exp,0);
-    const newLv = LEVEL_TABLE.reduce((lv,req,i)=>nx>=req?i+1:lv,1);
-    if (newLv > level) setTimeout(()=>{setShowLevelUp(true);setTimeout(()=>setShowLevelUp(false),3000)},100);
+    const newLv = levelFromTotalExp(nx);
+    if (newLv > level)
+      setTimeout(() => {
+        setLevelUpRange({ from: level, to: newLv });
+        setShowLevelUp(true);
+        setTimeout(() => {
+          setShowLevelUp(false);
+          setLevelUpRange(null);
+        }, 3000);
+      }, 100);
 
     // 寫入任務歷史紀錄（完成）
     appendMissionHistory({
@@ -572,7 +578,7 @@ export default function Home() {
               LEVEL UP
             </div>
             <div style={{fontSize:"1.5rem",color:"#ffffff",marginTop:"12px",letterSpacing:"2px"}}>
-              Lv.{level-1} → Lv.{level}
+              Lv.{levelUpRange?.from ?? level} → Lv.{levelUpRange?.to ?? level}
             </div>
             <div style={{fontSize:"0.65rem",color:rc.color,marginTop:"20px",letterSpacing:"4px"}}>
               {rc.next}
