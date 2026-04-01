@@ -399,6 +399,42 @@
   box-shadow: 0 0 0 3px var(--ielts-accent-light);
 }
 
+/* 詳情頁：單層 contenteditable，底色直接畫在 <mark> 上 */
+.ielts-hl-editor {
+  position: relative;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  outline: none;
+}
+.ielts-hl-editor[data-empty="true"]:not(:focus)::after {
+  content: attr(data-placeholder);
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  right: 12px;
+  color: var(--ielts-text-3);
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+mark.ielts-hl-inline {
+  color: var(--ielts-text-1);
+  padding: 0;
+  margin: 0;
+  border-radius: 3px;
+}
+/* 藍（預設）：舊資料僅有 .ielts-hl-inline 也視為藍 */
+mark.ielts-hl-inline.ielts-hl-blue,
+mark.ielts-hl-inline:not(.ielts-hl-yellow):not(.ielts-hl-red) {
+  background: rgba(47, 111, 237, 0.22);
+}
+mark.ielts-hl-inline.ielts-hl-yellow {
+  background: rgba(234, 179, 8, 0.38);
+}
+mark.ielts-hl-inline.ielts-hl-red {
+  background: rgba(239, 68, 68, 0.3);
+}
+
 .ielts-textarea-notes {
   width: 100%;
   min-height: 96px;

@@ -177,11 +177,12 @@ export default function IELTSPage() {
   const [navHidden, setNavHidden] = useState(false);
   const [panelTick, setPanelTick] = useState(0);
   const prevTabRef = useRef<IELTSSection | null>(null);
+  const skipNextTabPersistRef = useRef(true);
 
   const store = useIELTSStore();
   const router = useRouter();
 
-  // Restore last tab (so detail page back returns to 記錄)
+  // Restore last tab（從詳情返回時 session 已是 records；不可與下方 persist 同幀，否則會被初始 today 覆寫）
   useEffect(() => {
     try {
       const t = sessionStorage.getItem("ielts_last_tab_v1") as IELTSSection | null;
@@ -194,6 +195,10 @@ export default function IELTSPage() {
   }, []);
 
   useEffect(() => {
+    if (skipNextTabPersistRef.current) {
+      skipNextTabPersistRef.current = false;
+      return;
+    }
     try {
       sessionStorage.setItem("ielts_last_tab_v1", tab);
     } catch {
