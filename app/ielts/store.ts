@@ -550,19 +550,24 @@ export function useIELTSStore() {
     if (!prompt) return null;
     const notes = item.notes?.trim() ? item.notes.trim() : undefined;
     const id = crypto.randomUUID();
-    setSwRecords((prev) => [
-      {
-        id,
-        type: item.type,
-        prompt,
-        myAnswer: "",
-        improvedAnswer: "",
-        notes,
-        createdAt: iso,
-        updatedAt: iso,
-      },
-      ...prev,
-    ]);
+    const nextRec: SpeakingWritingEntry = {
+      id,
+      type: item.type,
+      prompt,
+      myAnswer: "",
+      improvedAnswer: "",
+      notes,
+      createdAt: iso,
+      updatedAt: iso,
+    };
+    setSwRecords((prev) => [nextRec, ...prev]);
+    // 立即寫入 localStorage：避免新增後立刻跳轉詳情頁時讀不到
+    try {
+      const cur = migrateSwRecords(lsGet<unknown>(IELTS_SW_RECORDS_KEY) ?? []);
+      lsSet(IELTS_SW_RECORDS_KEY, [nextRec, ...cur]);
+    } catch {
+      /* */
+    }
     return id;
   }, []);
 
@@ -574,19 +579,32 @@ export function useIELTSStore() {
       const improvedAnswer = item.improvedAnswer;
       if (!prompt) return;
       const notes = item.notes?.trim() ? item.notes.trim() : undefined;
-      setSwRecords((prev) =>
-        prev.map((r) =>
-          r.id === id
-            ? { ...r, type: item.type, prompt, myAnswer, improvedAnswer, notes, updatedAt: iso }
-            : r,
-        ),
-      );
+      setSwRecords((prev) => {
+        const next = prev.map((r) =>
+          r.id === id ? { ...r, type: item.type, prompt, myAnswer, improvedAnswer, notes, updatedAt: iso } : r,
+        );
+        // 立即寫入 localStorage：避免詳情頁刷新或快速返回時丟資料
+        try {
+          lsSet(IELTS_SW_RECORDS_KEY, next);
+        } catch {
+          /* */
+        }
+        return next;
+      });
     },
     [],
   );
 
   const removeSwRecord = useCallback((id: string) => {
-    setSwRecords((prev) => prev.filter((r) => r.id !== id));
+    setSwRecords((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      try {
+        lsSet(IELTS_SW_RECORDS_KEY, next);
+      } catch {
+        /* */
+      }
+      return next;
+    });
   }, []);
 
   const clearAllLocalData = useCallback(() => {

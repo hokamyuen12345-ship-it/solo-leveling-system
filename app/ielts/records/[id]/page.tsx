@@ -100,10 +100,24 @@ export default function IeltsRecordDetailPage({ params }: { params: { id: string
 
   useEffect(() => {
     setLoaded(true);
-    const r = readAll().find((x) => x.id === id) ?? null;
-    setRec(r);
-    setMyAns(r?.myAnswer ?? "");
-    setImprovedAns(r?.improvedAnswer ?? "");
+    const tryLoad = () => {
+      const r = readAll().find((x) => x.id === id) ?? null;
+      if (r) {
+        setRec(r);
+        setMyAns(r.myAnswer ?? "");
+        setImprovedAns(r.improvedAnswer ?? "");
+        return true;
+      }
+      return false;
+    };
+    if (tryLoad()) return;
+    // 新增後立刻跳轉時，localStorage 可能稍後才寫入；短暫重試避免空白
+    let tries = 0;
+    const t = window.setInterval(() => {
+      tries++;
+      if (tryLoad() || tries >= 12) window.clearInterval(t);
+    }, 80);
+    return () => window.clearInterval(t);
   }, [id]);
 
   const save = useCallback(() => {
