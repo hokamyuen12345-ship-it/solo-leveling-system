@@ -22,7 +22,8 @@ export type SpeakingWritingEntry = {
   id: string;
   type: SpeakingWritingType;
   prompt: string;
-  response: string;
+  myAnswer: string;
+  improvedAnswer: string;
   notes?: string;
   createdAt: string; // YYYY-MM-DD
   updatedAt: string; // YYYY-MM-DD
@@ -133,6 +134,37 @@ function safeParse<T>(raw: string | null): T | null {
 function lsGet<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
   return safeParse<T>(localStorage.getItem(key));
+}
+
+function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SpeakingWritingEntry[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue;
+    const obj = r as Partial<Record<string, unknown>>;
+    const id = typeof obj.id === "string" ? obj.id : null;
+    const type = obj.type === "writing" || obj.type === "speaking" ? obj.type : null;
+    const prompt = typeof obj.prompt === "string" ? obj.prompt : null;
+    const createdAt = typeof obj.createdAt === "string" ? obj.createdAt : todayIso();
+    const updatedAt = typeof obj.updatedAt === "string" ? obj.updatedAt : createdAt;
+    if (!id || !type || !prompt) continue;
+    const notes = typeof obj.notes === "string" ? obj.notes : undefined;
+    // v1: response -> myAnswer, improvedAnswer 空白
+    const response = typeof obj.response === "string" ? obj.response : "";
+    const myAnswer = typeof obj.myAnswer === "string" ? obj.myAnswer : response;
+    const improvedAnswer = typeof obj.improvedAnswer === "string" ? obj.improvedAnswer : "";
+    out.push({
+      id,
+      type,
+      prompt,
+      myAnswer,
+      improvedAnswer,
+      notes,
+      createdAt,
+      updatedAt,
+    });
+  }
+  return out;
 }
 
 function lsSet(key: string, value: unknown) {
@@ -291,7 +323,7 @@ export function useIELTSStore() {
       startedAt: null,
     });
     setFlashcards(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []);
-    setSwRecords(lsGet<SpeakingWritingEntry[]>(KEY_SW_RECORDS) ?? []);
+    setSwRecords(migrateSwRecords(lsGet<unknown>(KEY_SW_RECORDS) ?? []));
     setReady(true);
   }, []);
 
@@ -512,37 +544,40 @@ export function useIELTSStore() {
     [],
   );
 
-  const addSwRecord = useCallback((item: Pick<SpeakingWritingEntry, "type" | "prompt" | "response"> & { notes?: string }) => {
+  const addSwRecord = useCallback((item: Pick<SpeakingWritingEntry, "type" | "prompt"> & { notes?: string }): string | null => {
     const iso = todayIso();
     const prompt = item.prompt.trim();
-    const response = item.response.trim();
-    if (!prompt || !response) return;
+    if (!prompt) return null;
     const notes = item.notes?.trim() ? item.notes.trim() : undefined;
+    const id = crypto.randomUUID();
     setSwRecords((prev) => [
       {
-        id: crypto.randomUUID(),
+        id,
         type: item.type,
         prompt,
-        response,
+        myAnswer: "",
+        improvedAnswer: "",
         notes,
         createdAt: iso,
         updatedAt: iso,
       },
       ...prev,
     ]);
+    return id;
   }, []);
 
   const updateSwRecord = useCallback(
-    (id: string, item: Pick<SpeakingWritingEntry, "type" | "prompt" | "response"> & { notes?: string }) => {
+    (id: string, item: Pick<SpeakingWritingEntry, "type" | "prompt" | "myAnswer" | "improvedAnswer"> & { notes?: string }) => {
       const iso = todayIso();
       const prompt = item.prompt.trim();
-      const response = item.response.trim();
-      if (!prompt || !response) return;
+      const myAnswer = item.myAnswer;
+      const improvedAnswer = item.improvedAnswer;
+      if (!prompt) return;
       const notes = item.notes?.trim() ? item.notes.trim() : undefined;
       setSwRecords((prev) =>
         prev.map((r) =>
           r.id === id
-            ? { ...r, type: item.type, prompt, response, notes, updatedAt: iso }
+            ? { ...r, type: item.type, prompt, myAnswer, improvedAnswer, notes, updatedAt: iso }
             : r,
         ),
       );

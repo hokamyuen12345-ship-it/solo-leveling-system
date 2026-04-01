@@ -173,6 +173,7 @@ export default function IELTSPage() {
   const [expandedHeatDay, setExpandedHeatDay] = useState<number | null>(null);
   const [checkPopId, setCheckPopId] = useState<string | null>(null);
   const [clearSheetOpen, setClearSheetOpen] = useState(false);
+  const [navHidden, setNavHidden] = useState(false);
   const [panelTick, setPanelTick] = useState(0);
   const prevTabRef = useRef<IELTSSection | null>(null);
 
@@ -398,7 +399,7 @@ export default function IELTSPage() {
             ) : tab === "cards" ? (
               <CardsPanel store={store} themeDark={themeDark} />
             ) : tab === "records" ? (
-              <RecordsPanel store={store} themeDark={themeDark} />
+              <RecordsPanel store={store} themeDark={themeDark} setNavHidden={setNavHidden} />
             ) : tab === "scores" ? (
               <ScoresTab store={store} latest={latest} />
             ) : (
@@ -425,6 +426,7 @@ export default function IELTSPage() {
             borderTop: "1px solid var(--ielts-border-light)",
             boxShadow: "var(--ielts-shadow-sm)",
             zIndex: 100,
+            display: navHidden ? "none" : "block",
           }}
         >
           <div
@@ -1400,66 +1402,142 @@ function recordQuestions(t: SpeakingWritingType): string[] {
   ];
 }
 
-function RecordsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSStore>; themeDark: boolean }) {
+function wrapHighlightBySelection(
+  el: HTMLTextAreaElement | null,
+  value: string,
+  setValue: (v: string) => void,
+): void {
+  if (!el) return;
+  const s = el.selectionStart ?? 0;
+  const e = el.selectionEnd ?? 0;
+  if (e <= s) return;
+  const head = value.slice(0, s);
+  const mid = value.slice(s, e);
+  const tail = value.slice(e);
+  const next = `${head}==${mid}==${tail}`;
+  setValue(next);
+  requestAnimationFrame(() => {
+    try {
+      el.focus();
+      el.setSelectionRange(s + 2, e + 2);
+    } catch {
+      /* */
+    }
+  });
+}
+
+function HighlightPreview({ text }: { text: string }) {
+  const parts: ReactNode[] = [];
+  const re = /==([\s\S]*?)==/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if (start > last) parts.push(text.slice(last, start));
+    parts.push(
+      <mark
+        key={`${start}-${end}`}
+        style={{
+          background: "rgba(47,111,237,0.22)",
+          color: "var(--ielts-text-1)",
+          padding: "0 3px",
+          borderRadius: 4,
+        }}
+      >
+        {m[1]}
+      </mark>,
+    );
+    last = end;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return (
+    <div
+      className="ielts-text-body"
+      style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", fontSize: 14, color: "var(--ielts-text-2)" }}
+    >
+      {parts.length ? parts : text}
+    </div>
+  );
+}
+
+function RecordsPanel({
+  store,
+  themeDark,
+  setNavHidden,
+}: {
+  store: ReturnType<typeof useIELTSStore>;
+  themeDark: boolean;
+  setNavHidden: (v: boolean) => void;
+}) {
   const [filter, setFilter] = useState<"all" | SpeakingWritingType>("all");
   const [q, setQ] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const [rtype, setRtype] = useState<SpeakingWritingType>("writing");
   const [prompt, setPrompt] = useState("");
   const [response, setResponse] = useState("");
   const [notes, setNotes] = useState("");
 
-  const [etype, setEtype] = useState<SpeakingWritingType>("writing");
-  const [eprompt, setEprompt] = useState("");
-  const [eresponse, setEresponse] = useState("");
-  const [enotes, setEnotes] = useState("");
+  const [mode, setMode] = useState<"my" | "improved">("my");
+  const [myAns, setMyAns] = useState("");
+  const [improvedAns, setImprovedAns] = useState("");
+  const myRef = useRef<HTMLTextAreaElement | null>(null);
+  const improvedRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const editing = useMemo(() => (editId ? store.swRecords.find((r) => r.id === editId) ?? null : null), [editId, store.swRecords]);
-  useEffect(() => {
-    if (!editing) return;
-    setEtype(editing.type);
-    setEprompt(editing.prompt);
-    setEresponse(editing.response);
-    setEnotes(editing.notes ?? "");
-  }, [editing]);
-  useEffect(() => {
-    if (editId && !store.swRecords.some((r) => r.id === editId)) setEditId(null);
-  }, [editId, store.swRecords]);
+  const active = useMemo(() => (activeId ? store.swRecords.find((r) => r.id === activeId) ?? null : null), [activeId, store.swRecords]);
 
   const filtered = useMemo(() => {
     const base = filter === "all" ? store.swRecords : store.swRecords.filter((r) => r.type === filter);
     const needle = q.trim().toLowerCase();
     if (!needle) return base;
-    return base.filter((r) => `${r.prompt}\n${r.response}\n${r.notes ?? ""}`.toLowerCase().includes(needle));
+    return base.filter((r) => `${r.prompt}\n${r.myAnswer}\n${r.improvedAnswer}\n${r.notes ?? ""}`.toLowerCase().includes(needle));
   }, [filter, q, store.swRecords]);
 
   const openAdd = () => {
-    setEditId(null);
     setAddOpen(true);
   };
   const saveAdd = () => {
-    if (!prompt.trim() || !response.trim()) {
-      window.alert("請填寫題目與你的回答。");
+    if (!prompt.trim()) {
+      window.alert("請先填寫題目。");
       return;
     }
-    store.addSwRecord({ type: rtype, prompt: prompt.trim(), response: response.trim(), notes: notes.trim() || undefined });
+    const id = store.addSwRecord({ type: rtype, prompt: prompt.trim(), notes: notes.trim() || undefined });
     setPrompt("");
     setResponse("");
     setNotes("");
     setRtype("writing");
     setAddOpen(false);
-  };
-  const saveEdit = () => {
-    if (!editing) return;
-    if (!eprompt.trim() || !eresponse.trim()) {
-      window.alert("請填寫題目與你的回答。");
-      return;
+    if (id) {
+      setActiveId(id);
+      setMode("my");
     }
-    store.updateSwRecord(editing.id, { type: etype, prompt: eprompt.trim(), response: eresponse.trim(), notes: enotes.trim() || undefined });
-    setEditId(null);
   };
+
+  // 進入/離開詳情時，隱藏底部 nav
+  useEffect(() => {
+    setNavHidden(!!activeId);
+    return () => setNavHidden(false);
+  }, [activeId, setNavHidden]);
+
+  // 進入詳情時載入內容
+  useEffect(() => {
+    if (!active) return;
+    setMyAns(active.myAnswer);
+    setImprovedAns(active.improvedAnswer);
+  }, [activeId, active]);
+
+  const saveDetail = useCallback(() => {
+    if (!active) return;
+    store.updateSwRecord(active.id, {
+      type: active.type,
+      prompt: active.prompt,
+      myAnswer: myAns,
+      improvedAnswer: improvedAns,
+      notes: active.notes,
+    });
+  }, [active, improvedAns, myAns, store]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1526,79 +1604,190 @@ function RecordsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSS
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {active ? (
+        <div className="ielts-card-static" style={{ padding: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <span className="ielts-text-caption" style={{ fontWeight: 900, color: active.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}>
+                  {recordTypeLabel(active.type)}
+                </span>
+                <span className="ielts-text-caption">· {active.updatedAt}</span>
+              </div>
+              <div className="ielts-text-heading" style={{ marginTop: 10, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                {active.prompt}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="ielts-btn"
+              style={{ ...outlineBtn(), padding: "8px 12px", fontSize: 12, borderWidth: 2, flexShrink: 0 }}
+              onClick={() => {
+                saveDetail();
+                setActiveId(null);
+              }}
+            >
+              返回
+            </button>
+          </div>
+
+          <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
+            <button
+              type="button"
+              className="ielts-btn"
+              onClick={() => setMode("my")}
+              style={{
+                flex: 1,
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid var(--ielts-border-light)",
+                background: mode === "my" ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                color: mode === "my" ? "#fff" : "var(--ielts-text-2)",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              我的答案
+            </button>
+            <button
+              type="button"
+              className="ielts-btn"
+              onClick={() => setMode("improved")}
+              style={{
+                flex: 1,
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid var(--ielts-border-light)",
+                background: mode === "improved" ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                color: mode === "improved" ? "#fff" : "var(--ielts-text-2)",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              進階版本
+            </button>
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="ielts-text-caption" style={{ color: "var(--ielts-text-3)" }}>
+              選取文字後按 Highlight（會用 <span style={{ fontWeight: 900 }}>==重點==</span> 保存）
+            </div>
+            <button
+              type="button"
+              className="ielts-btn"
+              style={{ ...outlineBtn(), padding: "8px 12px", fontSize: 12, borderWidth: 2 }}
+              onClick={() => {
+                if (mode === "my") wrapHighlightBySelection(myRef.current, myAns, setMyAns);
+                else wrapHighlightBySelection(improvedRef.current, improvedAns, setImprovedAns);
+              }}
+            >
+              Highlight
+            </button>
+          </div>
+
+          {mode === "my" ? (
+            <textarea
+              ref={myRef}
+              className="ielts-input"
+              value={myAns}
+              onChange={(e) => setMyAns(e.target.value)}
+              placeholder="在這裡寫「我的答案」…"
+              style={{ marginTop: 10, minHeight: "48vh", fontSize: 14, lineHeight: 1.6, fontFamily: "inherit" }}
+            />
+          ) : (
+            <textarea
+              ref={improvedRef}
+              className="ielts-input"
+              value={improvedAns}
+              onChange={(e) => setImprovedAns(e.target.value)}
+              placeholder="在這裡寫「進階版本」…"
+              style={{ marginTop: 10, minHeight: "48vh", fontSize: 14, lineHeight: 1.6, fontFamily: "inherit" }}
+            />
+          )}
+
+          <div className="ielts-card-static" style={{ padding: 14, marginTop: 12, background: "var(--ielts-bg-hover)" }}>
+            <div className="ielts-text-caption" style={{ fontWeight: 900, marginBottom: 8 }}>
+              預覽（highlight）
+            </div>
+            <HighlightPreview text={mode === "my" ? myAns : improvedAns} />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="ielts-btn"
+              style={{ ...outlineBtn(), flex: 1 }}
+              onClick={() => {
+                saveDetail();
+                window.alert("已儲存。");
+              }}
+            >
+              儲存
+            </button>
+            <button
+              type="button"
+              className="ielts-btn"
+              style={{ ...outlineBtn(), flex: 1, borderColor: "var(--ielts-danger)", color: "var(--ielts-danger)" }}
+              onClick={() => {
+                if (window.confirm("確定刪除此記錄？")) {
+                  store.removeSwRecord(active.id);
+                  setActiveId(null);
+                }
+              }}
+            >
+              刪除
+            </button>
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="ielts-card-static" style={{ padding: 32, textAlign: "center" }}>
           <p className="ielts-text-body" style={{ color: "var(--ielts-text-3)" }}>
-            尚無記錄。點「新增記錄」把題目與你的回答存起來。
+            尚無記錄。點「新增記錄」先輸入題目，之後點題目進去寫答案。
           </p>
         </div>
       ) : (
         filtered.map((r) => (
-          <div key={r.id} className="ielts-card-static ielts-enter" style={{ padding: 16, borderLeft: `4px solid ${r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)"}` }}>
+          <div
+            key={r.id}
+            className="ielts-card-static ielts-enter"
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveId(r.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") setActiveId(r.id);
+            }}
+            style={{
+              padding: 16,
+              borderLeft: `4px solid ${r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)"}`,
+              cursor: "pointer",
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <span className="ielts-text-caption" style={{ fontWeight: 800, color: r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}>
+                  <span className="ielts-text-caption" style={{ fontWeight: 900, color: r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}>
                     {recordTypeLabel(r.type)}
                   </span>
                   <span className="ielts-text-caption">· {r.updatedAt}</span>
                 </div>
-                <div
-                  className="ielts-text-heading"
-                  style={{ marginTop: 6, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}
-                >
+                <div className="ielts-text-heading" style={{ marginTop: 8, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>
                   {r.prompt}
                 </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
-                <button
-                  type="button"
-                  className="ielts-btn"
-                  style={{ ...outlineBtn(), padding: "8px 12px", fontSize: 12, borderWidth: 2 }}
-                  onClick={() => {
-                    setAddOpen(false);
-                    setEditId(r.id);
-                  }}
-                >
-                  編輯
-                </button>
-                <button
-                  type="button"
-                  className="ielts-btn"
-                  style={{ fontSize: 12, color: "var(--ielts-danger)", border: "none", background: "none", cursor: "pointer", fontWeight: 700 }}
-                  onClick={() => {
-                    if (window.confirm("確定刪除此記錄？")) store.removeSwRecord(r.id);
-                  }}
-                >
-                  刪除
-                </button>
-              </div>
-            </div>
-            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-              <div>
-                <div className="ielts-text-caption" style={{ marginBottom: 6 }}>
-                  你的回答
-                </div>
-                <div
-                  className="ielts-text-body"
-                  style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", color: "var(--ielts-text-2)", fontSize: 14 }}
-                >
-                  {r.response}
+                <div className="ielts-text-caption" style={{ marginTop: 8 }}>
+                  點擊進入，寫「我的答案 / 進階版本」
                 </div>
               </div>
-              {r.notes ? (
-                <div>
-                  <div className="ielts-text-caption" style={{ marginBottom: 6 }}>
-                    備註
-                  </div>
-                  <div
-                    className="ielts-text-caption"
-                    style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", color: "var(--ielts-text-3)" }}
-                  >
-                    {r.notes}
-                  </div>
-                </div>
-              ) : null}
+              <button
+                type="button"
+                className="ielts-btn"
+                style={{ fontSize: 12, color: "var(--ielts-danger)", border: "none", background: "none", cursor: "pointer", fontWeight: 800, flexShrink: 0 }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (window.confirm("確定刪除此記錄？")) store.removeSwRecord(r.id);
+                }}
+              >
+                刪除
+              </button>
             </div>
           </div>
         ))
@@ -1647,56 +1836,6 @@ function RecordsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSS
                 取消
               </button>
               <button type="button" className="ielts-btn" style={{ ...solidBtn(), flex: 1 }} onClick={saveAdd}>
-                儲存
-              </button>
-            </div>
-          </div>
-        </IeltsSheetPortal>
-      )}
-
-      {editId && editing && (
-        <IeltsSheetPortal themeDark={themeDark}>
-          <div className="ielts-sheet-backdrop" role="presentation" style={{ pointerEvents: "auto" }} onClick={() => setEditId(null)} />
-          <div className="ielts-sheet" style={{ pointerEvents: "auto", maxHeight: "85vh", overflowY: "auto", paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))" }}>
-            <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
-              編輯記錄
-            </div>
-            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              類型
-              <select className="ielts-input" value={etype} onChange={(e) => setEtype(e.target.value as SpeakingWritingType)}>
-                <option value="writing">Writing</option>
-                <option value="speaking">Speaking</option>
-              </select>
-            </label>
-            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              題目
-              <textarea className="ielts-input" style={{ minHeight: 72 }} value={eprompt} onChange={(e) => setEprompt(e.target.value)} />
-            </label>
-            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              你的回答
-              <textarea className="ielts-input" style={{ minHeight: 140 }} value={eresponse} onChange={(e) => setEresponse(e.target.value)} />
-            </label>
-            <div className="ielts-card-static" style={{ padding: 14, background: "var(--ielts-bg-hover)" }}>
-              <div className="ielts-text-caption" style={{ fontWeight: 800, marginBottom: 8 }}>
-                引導問題（系統會問你）
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6 }}>
-                {recordQuestions(etype).map((x) => (
-                  <li key={x} className="ielts-text-caption" style={{ color: "var(--ielts-text-2)" }}>
-                    {x}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginTop: 10, marginBottom: 14 }}>
-              備註（選填）
-              <textarea className="ielts-input" style={{ minHeight: 72 }} value={enotes} onChange={(e) => setEnotes(e.target.value)} />
-            </label>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={() => setEditId(null)}>
-                取消
-              </button>
-              <button type="button" className="ielts-btn" style={{ ...solidBtn(), flex: 1 }} onClick={saveEdit}>
                 儲存
               </button>
             </div>
