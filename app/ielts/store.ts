@@ -97,7 +97,7 @@ const KEY_SCORES = "ielts_scores";
 const KEY_WRONG = "ielts_wrong_questions";
 const KEY_POMO_SESSION = "ielts_pomodoro_session";
 const KEY_FLASHCARDS = "ielts_flashcards_v1";
-const KEY_SW_RECORDS = "ielts_sw_records_v1";
+export const IELTS_SW_RECORDS_KEY = "ielts_sw_records_v1";
 
 export const IELTS_STORAGE_KEYS = [
   KEY_VERSION,
@@ -109,7 +109,7 @@ export const IELTS_STORAGE_KEYS = [
   KEY_WRONG,
   KEY_POMO_SESSION,
   KEY_FLASHCARDS,
-  KEY_SW_RECORDS,
+  IELTS_SW_RECORDS_KEY,
 ] as const;
 
 const SCHEMA_VERSION = 1;
@@ -136,7 +136,7 @@ function lsGet<T>(key: string): T | null {
   return safeParse<T>(localStorage.getItem(key));
 }
 
-function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
+export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
   if (!Array.isArray(raw)) return [];
   const out: SpeakingWritingEntry[] = [];
   for (const r of raw) {
@@ -306,7 +306,7 @@ export function useIELTSStore() {
     if (typeof window === "undefined") return;
     migrateIfNeeded();
     if (localStorage.getItem(KEY_FLASHCARDS) === null) lsSet(KEY_FLASHCARDS, []);
-    if (localStorage.getItem(KEY_SW_RECORDS) === null) lsSet(KEY_SW_RECORDS, []);
+    if (localStorage.getItem(IELTS_SW_RECORDS_KEY) === null) lsSet(IELTS_SW_RECORDS_KEY, []);
     setSettings(lsGet<Settings>(KEY_SETTINGS) ?? defaultSettings());
     setOverride(lsGet<Overrides>(KEY_OVERRIDE) ?? {});
     setCompletion(lsGet<Completion>(KEY_COMPLETION) ?? {});
@@ -323,7 +323,7 @@ export function useIELTSStore() {
       startedAt: null,
     });
     setFlashcards(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []);
-    setSwRecords(migrateSwRecords(lsGet<unknown>(KEY_SW_RECORDS) ?? []));
+    setSwRecords(migrateSwRecords(lsGet<unknown>(IELTS_SW_RECORDS_KEY) ?? []));
     setReady(true);
   }, []);
 
@@ -361,7 +361,7 @@ export function useIELTSStore() {
   }, [ready, flashcards]);
   useEffect(() => {
     if (!ready) return;
-    lsSet(KEY_SW_RECORDS, swRecords);
+    lsSet(IELTS_SW_RECORDS_KEY, swRecords);
   }, [ready, swRecords]);
 
   const getDayPlan = useCallback((day: number): DayPlan => {
@@ -623,7 +623,7 @@ export function useIELTSStore() {
       lsSet(KEY_SCORES, []);
       lsSet(KEY_WRONG, []);
       lsSet(KEY_FLASHCARDS, []);
-      lsSet(KEY_SW_RECORDS, []);
+      lsSet(IELTS_SW_RECORDS_KEY, []);
       lsSet(KEY_POMO_SESSION, {
         phase: "idle",
         endAt: null,
