@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import { FlashcardQuiz } from "./flashcard-quiz";
 import { FlashcardCloze } from "./flashcard-cloze";
 import { FlashcardDictation } from "./flashcard-dictation";
-import { fetchCloze, type ClozePayload } from "./fetch-cloze-client";
+import type { ClozePayload } from "./fetch-cloze-client";
 import { getStoredGoogleAIKey, setStoredGoogleAIKey } from "./llm-key-storage";
 import { ScoreTrendChart } from "./score-trend-chart";
 import { speakEnglish } from "./speech";
@@ -201,36 +201,13 @@ export default function IELTSPage() {
     setClozePrefetchErrById({});
   }, [cardsContentFingerprint, clozePrefetchNonce]);
 
-  useEffect(() => {
-    if (tab !== "cards" || !store.ready || store.flashcards.length === 0) return;
-    const ac = new AbortController();
-    const list = store.flashcards;
-    let ptr = 0;
-    const CONCURRENCY = 4;
+  const onClozeFetched = useCallback((id: string, data: ClozePayload) => {
+    setClozePrefetchById((prev) => (prev[id] ? prev : { ...prev, [id]: data }));
+  }, []);
 
-    (async () => {
-      async function worker() {
-        while (!ac.signal.aborted) {
-          const i = ptr++;
-          if (i >= list.length) break;
-          const c = list[i]!;
-          try {
-            const data = await fetchCloze(c, ac.signal);
-            if (ac.signal.aborted) return;
-            setClozePrefetchById((prev) => (prev[c.id] ? prev : { ...prev, [c.id]: data }));
-          } catch (e) {
-            if (ac.signal.aborted || (e as Error).name === "AbortError") return;
-            const msg = (e as Error).message || "載入失敗";
-            setClozePrefetchErrById((prev) => (prev[c.id] ? prev : { ...prev, [c.id]: msg }));
-          }
-        }
-      }
-      const n = Math.min(CONCURRENCY, list.length);
-      await Promise.all(Array.from({ length: n }, () => worker()));
-    })();
-
-    return () => ac.abort();
-  }, [tab, store.ready, store.flashcards, cardsContentFingerprint, clozePrefetchNonce]);
+  const onClozeError = useCallback((id: string, message: string) => {
+    setClozePrefetchErrById((prev) => (prev[id] ? prev : { ...prev, [id]: message }));
+  }, []);
 
   const retryClozePrefetch = useCallback(() => setClozePrefetchNonce((x) => x + 1), []);
 
@@ -481,6 +458,9 @@ export default function IELTSPage() {
                 themeDark={themeDark}
                 clozePrefetchById={clozePrefetchById}
                 clozePrefetchErrById={clozePrefetchErrById}
+                clozePrefetchNonce={clozePrefetchNonce}
+                onClozeFetched={onClozeFetched}
+                onClozeError={onClozeError}
                 onRetryClozePrefetch={retryClozePrefetch}
               />
             ) : tab === "records" ? (
@@ -1104,12 +1084,18 @@ function CardsPanel({
   themeDark,
   clozePrefetchById,
   clozePrefetchErrById,
+  clozePrefetchNonce,
+  onClozeFetched,
+  onClozeError,
   onRetryClozePrefetch,
 }: {
   store: ReturnType<typeof useIELTSStore>;
   themeDark: boolean;
   clozePrefetchById: Record<string, ClozePayload>;
   clozePrefetchErrById: Record<string, string>;
+  clozePrefetchNonce: number;
+  onClozeFetched: (id: string, data: ClozePayload) => void;
+  onClozeError: (id: string, message: string) => void;
   onRetryClozePrefetch: () => void;
 }) {
   const [filter, setFilter] = useState<"all" | FlashcardCategory>("all");
@@ -1242,6 +1228,9 @@ function CardsPanel({
         themeDark={themeDark}
         clozeById={clozePrefetchById}
         clozeErrById={clozePrefetchErrById}
+        clozeResetNonce={clozePrefetchNonce}
+        onClozeFetched={onClozeFetched}
+        onClozeError={onClozeError}
         onRetryClozePrefetch={onRetryClozePrefetch}
         onKnow={(id) => store.setFlashcardMastered(id, true)}
         onDontKnow={(id) => store.setFlashcardMastered(id, false)}

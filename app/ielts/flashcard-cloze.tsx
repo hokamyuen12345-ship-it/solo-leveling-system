@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ClozePayload } from "./fetch-cloze-client";
+import { fetchCloze, type ClozePayload } from "./fetch-cloze-client";
 import { getStoredGoogleAIKey, storeGoogleAiKeyFromPaste } from "./llm-key-storage";
 import { speakEnglish, stopSpeaking } from "./speech";
 import type { Flashcard, FlashcardCategory } from "./store";
@@ -34,10 +34,13 @@ type Props = {
   onKnow: (id: string) => void;
   onDontKnow: (id: string) => void;
   themeDark?: boolean;
-  /** 字卡頁預先向 AI 索取的填空快取（依字卡 id） */
+  /** 已由 AI 產生的填空（依字卡 id）；開啟本頁時會持續寫入 */
   clozeById: Record<string, ClozePayload>;
   clozeErrById: Record<string, string>;
-  /** 金鑰錯誤等：清空快取並請父層重新預取 */
+  /** 父層 retry 計數：變更時清除本輪請求去重，以便重新向 API 索取 */
+  clozeResetNonce: number;
+  onClozeFetched: (id: string, data: ClozePayload) => void;
+  onClozeError: (id: string, message: string) => void;
   onRetryClozePrefetch: () => void;
 };
 
@@ -68,8 +71,10 @@ function renderEnWithBlank(enSentence: string) {
   );
 }
 
+const CLOZE_CONCURRENCY = 4;
+
 /**
- * AI 句子填空：使用字卡頁預取的 clozeById；開啟全屏後換題不另打 API。
+ * AI 句子填空：開啟後依洗牌順序優先向 API 產生題目，第一題就緒即可作答；其餘題在背景並行生成並寫入 clozeById。
  */
 export function FlashcardCloze({
   open,
@@ -80,6 +85,9 @@ export function FlashcardCloze({
   themeDark,
   clozeById,
   clozeErrById,
+  clozeResetNonce,
+  onClozeFetched,
+  onClozeError,
   onRetryClozePrefetch,
 }: Props) {
   const [order, setOrder] = useState<Flashcard[]>([]);
@@ -94,12 +102,24 @@ export function FlashcardCloze({
   const [pasteKeyDraft, setPasteKeyDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const clozeByIdRef = useRef(clozeById);
+  const clozeErrRef = useRef(clozeErrById);
+  const idxRef = useRef(idx);
+  const orderRef = useRef(order);
+  const claimedIdsRef = useRef<Set<string>>(new Set());
+
+  clozeByIdRef.current = clozeById;
+  clozeErrRef.current = clozeErrById;
+  idxRef.current = idx;
+  orderRef.current = order;
+
   useEffect(() => {
     if (loadState === "error") setPasteKeyDraft(getStoredGoogleAIKey());
   }, [loadState]);
 
   useEffect(() => {
     if (!open || cards.length === 0) return;
+    claimedIdsRef.current.clear();
     setOrder(shuffle(cards));
     setIdx(0);
     setInput("");
@@ -112,10 +132,76 @@ export function FlashcardCloze({
   }, [open, cards]);
 
   useEffect(() => {
+    claimedIdsRef.current.clear();
+  }, [clozeResetNonce]);
+
+  useEffect(() => {
     if (!open) stopSpeaking();
   }, [open]);
 
   const current = order[idx] ?? null;
+
+  function prioritizedOrder(base: Flashcard[], fromIdx: number): Flashcard[] {
+    if (base.length === 0) return [];
+    const i = Math.max(0, Math.min(fromIdx, base.length - 1));
+    return [...base.slice(i), ...base.slice(0, i)];
+  }
+
+  useEffect(() => {
+    if (!open || simpleMode || order.length === 0) return;
+
+    const ac = new AbortController();
+    let cancelled = false;
+    const inFlight = new Set<string>();
+
+    function claimNext(): Flashcard | null {
+      const ord = orderRef.current;
+      const from = idxRef.current;
+      for (const c of prioritizedOrder(ord, from)) {
+        if (clozeByIdRef.current[c.id] || clozeErrRef.current[c.id]) continue;
+        if (claimedIdsRef.current.has(c.id)) continue;
+        claimedIdsRef.current.add(c.id);
+        inFlight.add(c.id);
+        return c;
+      }
+      return null;
+    }
+
+    function pendingRemaining(): number {
+      const ord = orderRef.current;
+      const from = idxRef.current;
+      return prioritizedOrder(ord, from).filter((c) => !clozeByIdRef.current[c.id] && !clozeErrRef.current[c.id]).length;
+    }
+
+    async function worker() {
+      while (!ac.signal.aborted && !cancelled) {
+        const next = claimNext();
+        if (!next) {
+          if (inFlight.size === 0 && pendingRemaining() === 0) break;
+          await new Promise((r) => setTimeout(r, 60));
+          continue;
+        }
+        try {
+          const data = await fetchCloze(next, ac.signal);
+          if (ac.signal.aborted || cancelled) return;
+          onClozeFetched(next.id, data);
+        } catch (e) {
+          if (ac.signal.aborted || cancelled || (e as Error).name === "AbortError") return;
+          onClozeError(next.id, (e as Error).message || "載入失敗");
+        } finally {
+          inFlight.delete(next.id);
+        }
+      }
+    }
+
+    const n = Math.min(CLOZE_CONCURRENCY, order.length);
+    void Promise.all(Array.from({ length: n }, () => worker()));
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [open, simpleMode, order, onClozeFetched, onClozeError, clozeResetNonce]);
 
   useEffect(() => {
     if (!open || !current) return;
@@ -152,7 +238,11 @@ export function FlashcardCloze({
   }, [open, current?.id, simpleMode, clozeById, clozeErrById, current]);
 
   const total = order.length;
-  const prefetchReadyCount = useMemo(() => order.filter((c) => clozeById[c.id]).length, [order, clozeById]);
+  const readyInRound = useMemo(() => order.filter((c) => clozeById[c.id]).length, [order, clozeById]);
+  const stillGenerating = useMemo(
+    () => order.filter((c) => !clozeById[c.id] && !clozeErrById[c.id]).length,
+    [order, clozeById, clozeErrById],
+  );
   const progress = total ? (idx / total) * 100 : 0;
 
   const expectedForCompare = simpleMode ? current?.word ?? "" : cloze?.expectedAnswer ?? "";
@@ -251,11 +341,11 @@ export function FlashcardCloze({
         {loadState === "loading" && (
           <div>
             <p className="ielts-text-body" style={{ margin: "0 0 6px", color: "var(--ielts-text-2)", fontWeight: 600 }}>
-              正在產生填空句…
+              正在產生本題 AI 填空…
             </p>
             {!simpleMode && total > 0 && (
               <p className="ielts-text-caption" style={{ margin: 0, color: "var(--ielts-text-3)", lineHeight: 1.5 }}>
-                本輪已準備 {prefetchReadyCount} / {total} 題（字卡頁會持續向 AI 預取）
+                可先略等本題；其餘 {Math.max(0, stillGenerating - 1)} 題會在背景繼續生成（已完成 {readyInRound} / {total}）。
               </p>
             )}
           </div>
