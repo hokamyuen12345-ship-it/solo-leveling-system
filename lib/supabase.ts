@@ -34,5 +34,7 @@ export const SYNC_KEYS = [
   "slq_custom_quests_v1",
   "slq_task_sections_v1",
   "slq_hidden_quest_ids_v1",
+  /** 任務名稱／EXP／時長覆寫 — 影響 Top Priority 排序與顯示，需跨裝置一致 */
+  "slq_quest_overrides_v1",
   "slq_avatar_data_url_v1",
 ] as const;

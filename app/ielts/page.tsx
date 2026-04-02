@@ -12,6 +12,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { FlashcardQuiz } from "./flashcard-quiz";
+import { FlashcardCloze } from "./flashcard-cloze";
+import { FlashcardDictation } from "./flashcard-dictation";
+import { fetchCloze, type ClozePayload } from "./fetch-cloze-client";
+import { getStoredGoogleAIKey, setStoredGoogleAIKey } from "./llm-key-storage";
 import { ScoreTrendChart } from "./score-trend-chart";
 import { speakEnglish } from "./speech";
 import { useIELTSStore, type DayTask, type Flashcard, type FlashcardCategory, type IELTSSection, type SpeakingWritingEntry, type SpeakingWritingType } from "./store";
@@ -182,6 +186,53 @@ export default function IELTSPage() {
 
   const store = useIELTSStore();
   const router = useRouter();
+
+  const [clozePrefetchById, setClozePrefetchById] = useState<Record<string, ClozePayload>>({});
+  const [clozePrefetchErrById, setClozePrefetchErrById] = useState<Record<string, string>>({});
+  const [clozePrefetchNonce, setClozePrefetchNonce] = useState(0);
+
+  const cardsContentFingerprint = useMemo(
+    () => store.flashcards.map((f) => `${f.id}\t${f.word}\t${f.meaning}`).join("\n"),
+    [store.flashcards],
+  );
+
+  useEffect(() => {
+    setClozePrefetchById({});
+    setClozePrefetchErrById({});
+  }, [cardsContentFingerprint, clozePrefetchNonce]);
+
+  useEffect(() => {
+    if (tab !== "cards" || !store.ready || store.flashcards.length === 0) return;
+    const ac = new AbortController();
+    const list = store.flashcards;
+    let ptr = 0;
+    const CONCURRENCY = 4;
+
+    (async () => {
+      async function worker() {
+        while (!ac.signal.aborted) {
+          const i = ptr++;
+          if (i >= list.length) break;
+          const c = list[i]!;
+          try {
+            const data = await fetchCloze(c, ac.signal);
+            if (ac.signal.aborted) return;
+            setClozePrefetchById((prev) => (prev[c.id] ? prev : { ...prev, [c.id]: data }));
+          } catch (e) {
+            if (ac.signal.aborted || (e as Error).name === "AbortError") return;
+            const msg = (e as Error).message || "載入失敗";
+            setClozePrefetchErrById((prev) => (prev[c.id] ? prev : { ...prev, [c.id]: msg }));
+          }
+        }
+      }
+      const n = Math.min(CONCURRENCY, list.length);
+      await Promise.all(Array.from({ length: n }, () => worker()));
+    })();
+
+    return () => ac.abort();
+  }, [tab, store.ready, store.flashcards, cardsContentFingerprint, clozePrefetchNonce]);
+
+  const retryClozePrefetch = useCallback(() => setClozePrefetchNonce((x) => x + 1), []);
 
   // Restore last tab（從詳情返回時 session 已是 records；不可與下方 persist 同幀，否則會被初始 today 覆寫）
   useEffect(() => {
@@ -425,7 +476,13 @@ export default function IELTSPage() {
               heatClass={heatClass}
             />
             ) : tab === "cards" ? (
-              <CardsPanel store={store} themeDark={themeDark} />
+              <CardsPanel
+                store={store}
+                themeDark={themeDark}
+                clozePrefetchById={clozePrefetchById}
+                clozePrefetchErrById={clozePrefetchErrById}
+                onRetryClozePrefetch={retryClozePrefetch}
+              />
             ) : tab === "records" ? (
               <RecordsPanel store={store} themeDark={themeDark} setNavHidden={setNavHidden} />
             ) : tab === "scores" ? (
@@ -1042,10 +1099,24 @@ const CAT_COLORS: Record<FlashcardCategory, string> = {
   grammar: "var(--ielts-reading)",
 };
 
-function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSStore>; themeDark: boolean }) {
+function CardsPanel({
+  store,
+  themeDark,
+  clozePrefetchById,
+  clozePrefetchErrById,
+  onRetryClozePrefetch,
+}: {
+  store: ReturnType<typeof useIELTSStore>;
+  themeDark: boolean;
+  clozePrefetchById: Record<string, ClozePayload>;
+  clozePrefetchErrById: Record<string, string>;
+  onRetryClozePrefetch: () => void;
+}) {
   const [filter, setFilter] = useState<"all" | FlashcardCategory>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [dictationOpen, setDictationOpen] = useState(false);
+  const [clozeOpen, setClozeOpen] = useState(false);
   const [word, setWord] = useState("");
   const [meaning, setMeaning] = useState("");
   const [example, setExample] = useState("");
@@ -1090,6 +1161,22 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
       return;
     }
     setQuizOpen(true);
+  };
+
+  const startDictation = () => {
+    if (filtered.length === 0) {
+      window.alert("目前沒有可默寫的單詞，請先新增或換個分類。");
+      return;
+    }
+    setDictationOpen(true);
+  };
+
+  const startCloze = () => {
+    if (filtered.length === 0) {
+      window.alert("目前沒有可練習的單詞，請先新增或換個分類。");
+      return;
+    }
+    setClozeOpen(true);
   };
 
   const saveNew = () => {
@@ -1140,6 +1227,25 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
         onKnow={(id) => store.setFlashcardMastered(id, true)}
         onDontKnow={(id) => store.setFlashcardMastered(id, false)}
       />
+      <FlashcardDictation
+        open={dictationOpen}
+        onClose={() => setDictationOpen(false)}
+        cards={filtered}
+        themeDark={themeDark}
+        onKnow={(id) => store.setFlashcardMastered(id, true)}
+        onDontKnow={(id) => store.setFlashcardMastered(id, false)}
+      />
+      <FlashcardCloze
+        open={clozeOpen}
+        onClose={() => setClozeOpen(false)}
+        cards={filtered}
+        themeDark={themeDark}
+        clozeById={clozePrefetchById}
+        clozeErrById={clozePrefetchErrById}
+        onRetryClozePrefetch={onRetryClozePrefetch}
+        onKnow={(id) => store.setFlashcardMastered(id, true)}
+        onDontKnow={(id) => store.setFlashcardMastered(id, false)}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
         {[
@@ -1157,11 +1263,11 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <button
           type="button"
           className="ielts-btn ielts-enter"
-          style={{ ...outlineBtn(), flex: 1 }}
+          style={{ ...outlineBtn(), width: "100%" }}
           onClick={() => {
             setEditId(null);
             setAddOpen(true);
@@ -1169,9 +1275,47 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
         >
           ＋ 新增單詞
         </button>
-        <button type="button" className="ielts-btn ielts-enter" style={{ ...solidBtn(), flex: 1 }} onClick={startQuiz}>
-          ▶ 開始測驗
-        </button>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <button type="button" className="ielts-btn ielts-enter" style={{ ...solidBtn(), padding: "12px 8px", fontSize: 13 }} onClick={startQuiz}>
+            ▶ 測驗
+          </button>
+          <button
+            type="button"
+            className="ielts-btn ielts-enter"
+            style={{
+              padding: "12px 8px",
+              borderRadius: 12,
+              border: "2px solid var(--ielts-writing)",
+              background: "rgba(245, 158, 11, 0.12)",
+              color: "var(--ielts-writing)",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+            onClick={startDictation}
+          >
+            ✎ 默寫
+          </button>
+          <button
+            type="button"
+            className="ielts-btn ielts-enter"
+            style={{
+              padding: "12px 8px",
+              borderRadius: 12,
+              border: "2px solid var(--ielts-accent)",
+              background: "var(--ielts-accent-light)",
+              color: "var(--ielts-accent)",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+            onClick={startCloze}
+          >
+            AI 填空
+          </button>
+        </div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {(
@@ -2041,6 +2185,11 @@ function SettingsTab({
 }) {
   const [importText, setImportText] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [googleKeyDraft, setGoogleKeyDraft] = useState("");
+
+  useEffect(() => {
+    setGoogleKeyDraft(getStoredGoogleAIKey());
+  }, []);
 
   const download = () => {
     const blob = new Blob([JSON.stringify(store.exportAll(), null, 2)], { type: "application/json" });
@@ -2108,6 +2257,36 @@ function SettingsTab({
             />
           </label>
         </div>
+      </div>
+
+      <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>
+        <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
+          AI 句子填空
+        </div>
+        <p className="ielts-text-caption" style={{ margin: "0 0 12px", lineHeight: 1.55 }}>
+          僅支援 <strong>Google AI Studio（Gemini）</strong>。在{" "}
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: "var(--ielts-accent)" }}>
+            Google AI Studio
+          </a>{" "}
+          建立 API 金鑰（以 <code style={{ fontSize: 12 }}>AIza</code> 開頭），貼上後點別處即存本機。部署到雲端時請在主機設定環境變數{" "}
+          <code style={{ fontSize: 12 }}>GEMINI_API_KEY</code>。金鑰不會寫入備份 JSON。
+        </p>
+        <label className="ielts-text-caption" style={{ display: "grid", gap: 6 }}>
+          Google AI Studio API 金鑰
+          <input
+            className="ielts-input"
+            type="password"
+            autoComplete="off"
+            value={googleKeyDraft}
+            onChange={(e) => setGoogleKeyDraft(e.target.value)}
+            onBlur={() => {
+              setStoredGoogleAIKey(googleKeyDraft);
+              setGoogleKeyDraft(getStoredGoogleAIKey());
+            }}
+            placeholder="AIza…（貼上後點別處即儲存，會自動去掉空格與換行）"
+            style={{ fontFamily: "monospace", fontSize: 13 }}
+          />
+        </label>
       </div>
 
       <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>

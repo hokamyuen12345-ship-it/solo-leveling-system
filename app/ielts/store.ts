@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { IELTS_GOOGLE_AI_KEY_LS } from "./llm-key-storage";
 
 export type IELTSSection = "today" | "calendar" | "cards" | "records" | "scores" | "settings";
 
@@ -251,6 +252,13 @@ function defaultSettings(): Settings {
   };
 }
 
+/** Strip fields removed from Settings so old localStorage / backups still load. */
+function sanitizeSettingsRaw(raw: Record<string, unknown>): Record<string, unknown> {
+  const { targetOverallBand: _removed, ...rest } = raw;
+  void _removed;
+  return rest;
+}
+
 function migrateIfNeeded() {
   if (typeof window === "undefined") return;
   const v = Number(localStorage.getItem(KEY_VERSION) ?? "0");
@@ -307,7 +315,8 @@ export function useIELTSStore() {
     migrateIfNeeded();
     if (localStorage.getItem(KEY_FLASHCARDS) === null) lsSet(KEY_FLASHCARDS, []);
     if (localStorage.getItem(IELTS_SW_RECORDS_KEY) === null) lsSet(IELTS_SW_RECORDS_KEY, []);
-    setSettings(lsGet<Settings>(KEY_SETTINGS) ?? defaultSettings());
+    const rawSettings = lsGet<Record<string, unknown>>(KEY_SETTINGS);
+    setSettings({ ...defaultSettings(), ...(rawSettings ? sanitizeSettingsRaw(rawSettings) : {}) } as Settings);
     setOverride(lsGet<Overrides>(KEY_OVERRIDE) ?? {});
     setCompletion(lsGet<Completion>(KEY_COMPLETION) ?? {});
     setNotes(lsGet<Notes>(KEY_NOTES) ?? {});
@@ -612,6 +621,8 @@ export function useIELTSStore() {
     try {
       IELTS_STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
       localStorage.removeItem("ielts_api_key");
+      localStorage.removeItem(IELTS_GOOGLE_AI_KEY_LS);
+      localStorage.removeItem("ielts_openai_key");
     } catch {
       /* */
     }
@@ -685,7 +696,11 @@ export function useIELTSStore() {
       flashcards: Flashcard[];
       swRecords: SpeakingWritingEntry[];
     }>;
-    if (obj.settings) setSettings({ ...defaultSettings(), ...obj.settings, schemaVersion: SCHEMA_VERSION });
+    if (obj.settings) {
+      const raw = { ...(obj.settings as Record<string, unknown>) };
+      delete raw.targetOverallBand;
+      setSettings({ ...defaultSettings(), ...raw, schemaVersion: SCHEMA_VERSION } as Settings);
+    }
     if (obj.scheduleOverride) setOverride(obj.scheduleOverride);
     if (obj.completion) setCompletion(obj.completion);
     if (obj.notes) setNotes(obj.notes);

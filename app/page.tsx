@@ -1757,25 +1757,50 @@ export default function Home() {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
+  /** 登入並從雲端寫入 localStorage 後再載入，否則同一帳號兩台裝置任務／Top Priority 會不一致 */
   useEffect(() => {
+    if (syncStatus === "pending") return;
+    if (typeof window === "undefined") return;
     try {
       const raw = localStorage.getItem(QUEST_OVERRIDES_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, { label?: string; minutes?: number; exp?: number }>;
-      const next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>> = {};
-      Object.entries(parsed).forEach(([k, v]) => {
-        const id = Number(k);
-        if (!Number.isFinite(id)) return;
-        next[id] = {};
-        if (typeof v.label === "string") next[id].label = v.label;
-        if (typeof v.minutes === "number") next[id].minutes = v.minutes;
-        if (typeof v.exp === "number") next[id].exp = v.exp;
-      });
-      setQuestOverrides(next);
+      if (!raw) setQuestOverrides({});
+      else {
+        const parsed = JSON.parse(raw) as Record<string, { label?: string; minutes?: number; exp?: number }>;
+        const next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>> = {};
+        Object.entries(parsed).forEach(([k, v]) => {
+          const id = Number(k);
+          if (!Number.isFinite(id)) return;
+          next[id] = {};
+          if (typeof v.label === "string") next[id].label = v.label;
+          if (typeof v.minutes === "number") next[id].minutes = v.minutes;
+          if (typeof v.exp === "number") next[id].exp = v.exp;
+        });
+        setQuestOverrides(next);
+      }
     } catch {
-      // ignore
+      setQuestOverrides({});
     }
-  }, []);
+    try {
+      const c = localStorage.getItem(CUSTOM_QUESTS_KEY);
+      if (c) {
+        const parsed = JSON.parse(c) as CustomQuestStored[];
+        if (Array.isArray(parsed)) setCustomQuests(parsed.map(migrateCustomQuestStored));
+      }
+      const h = localStorage.getItem(HIDDEN_QUEST_IDS_KEY);
+      if (h) {
+        const parsed = JSON.parse(h) as unknown;
+        if (Array.isArray(parsed)) setHiddenQuestIds(parsed.filter((x): x is number => typeof x === "number"));
+      }
+      const s = localStorage.getItem(TASK_SECTIONS_PREFS_KEY);
+      if (s) {
+        const p = JSON.parse(s) as { order?: TaskSectionId[]; collapsed?: Partial<Record<TaskSectionId, boolean>> };
+        setSectionOrder(normalizeSectionOrder(p.order));
+        if (p.collapsed && typeof p.collapsed === "object") setSectionCollapsed(p.collapsed);
+      }
+    } catch {
+      /* */
+    }
+  }, [syncStatus]);
 
   const saveQuestOverrides = useCallback((next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>>) => {
     setQuestOverrides(next);
@@ -1801,30 +1826,6 @@ export default function Home() {
     const custom = customQuests.map(customStoredToQuest);
     return [...built, ...custom];
   }, [questOverrides, customQuests, hiddenQuestIds]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const c = localStorage.getItem(CUSTOM_QUESTS_KEY);
-      if (c) {
-        const parsed = JSON.parse(c) as CustomQuestStored[];
-        if (Array.isArray(parsed)) setCustomQuests(parsed.map(migrateCustomQuestStored));
-      }
-      const h = localStorage.getItem(HIDDEN_QUEST_IDS_KEY);
-      if (h) {
-        const parsed = JSON.parse(h) as unknown;
-        if (Array.isArray(parsed)) setHiddenQuestIds(parsed.filter((x): x is number => typeof x === "number"));
-      }
-      const s = localStorage.getItem(TASK_SECTIONS_PREFS_KEY);
-      if (s) {
-        const p = JSON.parse(s) as { order?: TaskSectionId[]; collapsed?: Partial<Record<TaskSectionId, boolean>> };
-        setSectionOrder(normalizeSectionOrder(p.order));
-        if (p.collapsed && typeof p.collapsed === "object") setSectionCollapsed(p.collapsed);
-      }
-    } catch {
-      /* */
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
