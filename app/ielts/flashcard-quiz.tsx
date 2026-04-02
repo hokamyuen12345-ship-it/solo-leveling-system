@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useState } from "react";
+import { speakEnglish, stopSpeaking } from "./speech";
 import type { Flashcard, FlashcardCategory } from "./store";
 
 function shuffle<T>(arr: T[]): T[] {
@@ -42,6 +43,10 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
     setFlipped(false);
     setSlide("in");
     // 只在開啟測驗時洗牌；作答中若 cards 因 mastered 更新，不重設進度
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) stopSpeaking();
   }, [open]);
 
   const current = order[idx] ?? null;
@@ -134,7 +139,28 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
                 <div className="ielts-text-hero" style={{ fontSize: "clamp(36px, 10vw, 52px)", color: "var(--ielts-text-1)" }}>
                   {current.word}
                 </div>
-                <p className="ielts-text-caption" style={{ marginTop: 20 }}>
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    speakEnglish(current.word);
+                  }}
+                  style={{
+                    marginTop: 18,
+                    padding: "10px 18px",
+                    borderRadius: 12,
+                    border: "1px solid var(--ielts-accent)",
+                    background: "var(--ielts-accent-light)",
+                    color: "var(--ielts-accent)",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  🔊 朗讀單字
+                </button>
+                <p className="ielts-text-caption" style={{ marginTop: 16 }}>
                   點一下翻面
                 </p>
               </div>
@@ -143,9 +169,32 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
                   {current.meaning}
                 </div>
                 {current.example ? (
-                  <p className="ielts-text-body" style={{ fontSize: 14, color: "var(--ielts-text-3)", fontStyle: "italic" }}>
-                    {current.example}
-                  </p>
+                  <>
+                    <p className="ielts-text-body" style={{ fontSize: 14, color: "var(--ielts-text-3)", fontStyle: "italic" }}>
+                      {current.example}
+                    </p>
+                    <button
+                      type="button"
+                      className="ielts-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        speakEnglish(current.example!);
+                      }}
+                      style={{
+                        marginTop: 14,
+                        padding: "8px 16px",
+                        borderRadius: 12,
+                        border: "1px solid var(--ielts-border-light)",
+                        background: "var(--ielts-bg-hover)",
+                        color: "var(--ielts-text-2)",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      🔊 朗讀例句
+                    </button>
+                  </>
                 ) : null}
               </div>
             </div>

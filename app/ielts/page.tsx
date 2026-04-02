@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { FlashcardQuiz } from "./flashcard-quiz";
 import { ScoreTrendChart } from "./score-trend-chart";
+import { speakEnglish } from "./speech";
 import { useIELTSStore, type DayTask, type Flashcard, type FlashcardCategory, type IELTSSection, type SpeakingWritingEntry, type SpeakingWritingType } from "./store";
 import { useRouter } from "next/navigation";
 
@@ -1235,7 +1236,34 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               單字 / 片語
-              <input className="ielts-input" value={word} onChange={(e) => setWord(e.target.value)} placeholder="例如：elaborate" />
+              <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+                <input
+                  className="ielts-input"
+                  style={{ flex: 1, minWidth: 0 }}
+                  value={word}
+                  onChange={(e) => setWord(e.target.value)}
+                  placeholder="例如：elaborate"
+                />
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  title="朗讀單字（英式英文語音）"
+                  style={{
+                    flexShrink: 0,
+                    padding: "0 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--ielts-accent)",
+                    background: "var(--ielts-accent-light)",
+                    color: "var(--ielts-accent)",
+                    fontWeight: 800,
+                    fontSize: 16,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => speakEnglish(word)}
+                >
+                  🔊
+                </button>
+              </div>
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               解釋
@@ -1291,7 +1319,34 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               單字 / 片語
-              <input className="ielts-input" value={eword} onChange={(e) => setEword(e.target.value)} placeholder="例如：elaborate" />
+              <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+                <input
+                  className="ielts-input"
+                  style={{ flex: 1, minWidth: 0 }}
+                  value={eword}
+                  onChange={(e) => setEword(e.target.value)}
+                  placeholder="例如：elaborate"
+                />
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  title="朗讀單字（英式英文語音）"
+                  style={{
+                    flexShrink: 0,
+                    padding: "0 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--ielts-accent)",
+                    background: "var(--ielts-accent-light)",
+                    color: "var(--ielts-accent)",
+                    fontWeight: 800,
+                    fontSize: 16,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => speakEnglish(eword)}
+                >
+                  🔊
+                </button>
+              </div>
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               解釋
@@ -1365,6 +1420,24 @@ function CardsPanel({ store, themeDark }: { store: ReturnType<typeof useIELTSSto
               ) : null}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+              <button
+                type="button"
+                className="ielts-btn"
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "1px solid var(--ielts-accent)",
+                  color: "var(--ielts-accent)",
+                  background: "var(--ielts-accent-light)",
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                }}
+                title="朗讀單字"
+                onClick={() => speakEnglish(c.word)}
+              >
+                🔊 朗讀
+              </button>
               <button
                 type="button"
                 className="ielts-btn"
