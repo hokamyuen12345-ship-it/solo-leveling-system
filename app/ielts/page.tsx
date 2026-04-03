@@ -18,20 +18,40 @@ import type { ClozePayload } from "./fetch-cloze-client";
 import { getStoredGoogleAIKey, setStoredGoogleAIKey } from "./llm-key-storage";
 import { ScoreTrendChart } from "./score-trend-chart";
 import { speakEnglish } from "./speech";
-import { useIELTSStore, type DayTask, type Flashcard, type FlashcardCategory, type IELTSSection, type SpeakingWritingEntry, type SpeakingWritingType } from "./store";
+import {
+  useIELTSStore,
+  type DayTask,
+  type Flashcard,
+  type FlashcardCategory,
+  type FlashcardCategoryDef,
+  type IELTSSection,
+  type SpeakingWritingEntry,
+  type SpeakingWritingType,
+  flashcardCategoryLabel,
+} from "./store";
 import { useRouter } from "next/navigation";
 
 const SL_HOME_FROM_IELTS = "sl_home_from_ielts_v1";
+const IELTS_ACCENT_PINK_LS = "ielts_accent_pink_v1";
 
 /**
  * 掛到 body：避免放在帶 transform 的 .ielts-page-panel 內時，fixed 底欄變成相對面板定位而表單被裁切／看不到。
  */
-function IeltsSheetPortal({ themeDark, children }: { themeDark: boolean; children: ReactNode }) {
+function IeltsSheetPortal({
+  themeDark,
+  accentPink,
+  children,
+}: {
+  themeDark: boolean;
+  accentPink: boolean;
+  children: ReactNode;
+}) {
   if (typeof document === "undefined") return null;
   return createPortal(
     <div
       className="ielts-root"
       data-theme={themeDark ? "dark" : undefined}
+      data-accent={accentPink ? "pink" : undefined}
       style={{
         position: "fixed",
         inset: 0,
@@ -85,6 +105,7 @@ function pomoPhaseZh(phase: string): string {
 }
 
 function taskStripClass(t: DayTask): string {
+  if (t.id.startsWith("custom-")) return "ielts-strip-custom";
   if (t.id.includes("warmup")) return "ielts-strip-warmup";
   if (t.id.includes("writing")) return "ielts-strip-writing";
   if (t.id.includes("speaking")) return "ielts-strip-speaking";
@@ -154,7 +175,7 @@ function PomodoroRing({ pct, size = 100 }: { pct: number; size?: number }) {
   const off = c * (1 - Math.min(100, Math.max(0, pct)) / 100);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--ielts-border-light)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--ielts-progress-track)" strokeWidth={stroke} />
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -175,6 +196,7 @@ function PomodoroRing({ pct, size = 100 }: { pct: number; size?: number }) {
 export default function IELTSPage() {
   const [tab, setTab] = useState<IELTSSection>("today");
   const [themeDark, setThemeDark] = useState(false);
+  const [accentPink, setAccentPink] = useState(false);
   const [expandedTips, setExpandedTips] = useState<Record<string, boolean>>({});
   const [expandedHeatDay, setExpandedHeatDay] = useState<number | null>(null);
   const [checkPopId, setCheckPopId] = useState<string | null>(null);
@@ -235,6 +257,22 @@ export default function IELTSPage() {
     }
   }, [tab]);
 
+  useEffect(() => {
+    try {
+      setAccentPink(localStorage.getItem(IELTS_ACCENT_PINK_LS) === "1");
+    } catch {
+      /* */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(IELTS_ACCENT_PINK_LS, accentPink ? "1" : "0");
+    } catch {
+      /* */
+    }
+  }, [accentPink]);
+
   const plan = store.getDayPlan(store.currentDay);
   const doneCount = plan.tasks.filter((t) => store.completion[`${store.currentDay}_${t.id}`]).length;
   const completionRate = plan.tasks.length ? Math.round((doneCount / plan.tasks.length) * 100) : 0;
@@ -268,7 +306,6 @@ export default function IELTSPage() {
       .map((s) => ({ date: s.date, L: s.L, R: s.R, W: s.W, S: s.S }));
   }, [store.scores]);
 
-  const latest = store.scores[0];
 
   const daysLeftAnimated = useCountUp(
     store.daysLeft,
@@ -359,7 +396,7 @@ export default function IELTSPage() {
   };
 
   return (
-    <div className="ielts-root" data-theme={themeDark ? "dark" : undefined}>
+    <div className="ielts-root" data-theme={themeDark ? "dark" : undefined} data-accent={accentPink ? "pink" : undefined}>
       <main
         style={{
           minHeight: "100dvh",
@@ -456,6 +493,7 @@ export default function IELTSPage() {
               <CardsPanel
                 store={store}
                 themeDark={themeDark}
+                accentPink={accentPink}
                 clozePrefetchById={clozePrefetchById}
                 clozePrefetchErrById={clozePrefetchErrById}
                 clozePrefetchNonce={clozePrefetchNonce}
@@ -464,14 +502,16 @@ export default function IELTSPage() {
                 onRetryClozePrefetch={retryClozePrefetch}
               />
             ) : tab === "records" ? (
-              <RecordsPanel store={store} themeDark={themeDark} setNavHidden={setNavHidden} />
+              <RecordsPanel store={store} themeDark={themeDark} accentPink={accentPink} setNavHidden={setNavHidden} />
             ) : tab === "scores" ? (
-              <ScoresTab store={store} latest={latest} />
+              <ScoresTab store={store} />
             ) : (
               <SettingsTab
                 store={store}
                 themeDark={themeDark}
                 setThemeDark={setThemeDark}
+                accentPink={accentPink}
+                setAccentPink={setAccentPink}
                 clearSheetOpen={clearSheetOpen}
                 setClearSheetOpen={setClearSheetOpen}
               />
@@ -598,6 +638,58 @@ function TodayPanel({
     }
     return n;
   }, [store]);
+
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [newTaskIcon, setNewTaskIcon] = useState("✨");
+  const [newTaskLabel, setNewTaskLabel] = useState("自訂任務");
+  const [newTaskTime, setNewTaskTime] = useState("30 分");
+  const [newTaskDesc, setNewTaskDesc] = useState("");
+  const [newTaskTip, setNewTaskTip] = useState("");
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editIcon, setEditIcon] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editTaskBody, setEditTaskBody] = useState("");
+  const [editTip, setEditTip] = useState("");
+  const day = store.currentDay;
+  const hasDayOverride = store.override[day] !== undefined;
+
+  const openTaskEditor = (t: DayTask) => {
+    setEditingTaskId(t.id);
+    setEditIcon(t.icon);
+    setEditTime(t.time);
+    setEditLabel(t.label);
+    setEditTaskBody(t.task);
+    setEditTip(t.tip);
+  };
+
+  const saveTaskEdit = () => {
+    if (!editingTaskId) return;
+    store.updateDayTask(day, editingTaskId, {
+      icon: editIcon,
+      time: editTime,
+      label: editLabel,
+      task: editTaskBody,
+      tip: editTip,
+    });
+    setEditingTaskId(null);
+  };
+
+  const submitNewTask = () => {
+    store.addDayTask(day, {
+      icon: newTaskIcon,
+      label: newTaskLabel,
+      time: newTaskTime,
+      task: newTaskDesc,
+      tip: newTaskTip,
+    });
+    setAddTaskOpen(false);
+    setNewTaskIcon("✨");
+    setNewTaskLabel("自訂任務");
+    setNewTaskTime("30 分");
+    setNewTaskDesc("");
+    setNewTaskTip("");
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -769,7 +861,7 @@ function TodayPanel({
               flex: 1,
               height: 6,
               borderRadius: 999,
-              background: "var(--ielts-border-light)",
+              background: "var(--ielts-progress-track)",
               overflow: "hidden",
             }}
           >
@@ -778,7 +870,7 @@ function TodayPanel({
                 height: "100%",
                 width: `${completionRate}%`,
                 borderRadius: 999,
-                background: "var(--ielts-accent)",
+                background: "var(--ielts-progress-fill)",
                 transition: "width 0.35s ease",
               }}
             />
@@ -787,6 +879,129 @@ function TodayPanel({
             {doneCount} / {plan.tasks.length} 已完成
           </span>
         </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+          <button
+            type="button"
+            className="ielts-btn"
+            onClick={() => setAddTaskOpen((o) => !o)}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "1px solid var(--ielts-border-light)",
+              background: "var(--ielts-accent-light)",
+              color: "var(--ielts-accent)",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            {addTaskOpen ? "收起表單" : "＋ 新增任務"}
+          </button>
+          {hasDayOverride ? (
+            <button
+              type="button"
+              className="ielts-btn"
+              onClick={() => {
+                if (window.confirm("還原為系統預設的任務清單？（自訂新增／刪除的變更會消失）")) {
+                  store.setOverrideTasks(day, null);
+                }
+              }}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 10,
+                border: "1px solid var(--ielts-border-light)",
+                background: "var(--ielts-bg-hover)",
+                color: "var(--ielts-text-2)",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              還原預設任務
+            </button>
+          ) : null}
+        </div>
+        {addTaskOpen ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 14,
+              borderRadius: 12,
+              border: "1px solid var(--ielts-border-light)",
+              background: "var(--ielts-bg-hover)",
+              display: "grid",
+              gap: 10,
+            }}
+          >
+            <span className="ielts-text-caption" style={{ fontWeight: 700 }}>
+              新增「第 {day} 天」任務（僅影響今天這一天）
+            </span>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                圖示
+                <input className="ielts-input" value={newTaskIcon} onChange={(e) => setNewTaskIcon(e.target.value)} maxLength={8} />
+              </label>
+              <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                預估時間
+                <input className="ielts-input" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} placeholder="例：30 分" />
+              </label>
+            </div>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+              標題
+              <input className="ielts-input" value={newTaskLabel} onChange={(e) => setNewTaskLabel(e.target.value)} />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+              內容說明
+              <textarea
+                className="ielts-textarea-notes"
+                value={newTaskDesc}
+                onChange={(e) => setNewTaskDesc(e.target.value)}
+                placeholder="這項任務要做什麼…"
+                rows={3}
+                style={{ minHeight: 72 }}
+              />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+              小提示（選填，可展開查看）
+              <input className="ielts-input" value={newTaskTip} onChange={(e) => setNewTaskTip(e.target.value)} />
+            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="ielts-btn"
+                onClick={submitNewTask}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "var(--ielts-accent)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                加入清單
+              </button>
+              <button
+                type="button"
+                className="ielts-btn"
+                onClick={() => setAddTaskOpen(false)}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  border: "1px solid var(--ielts-border-light)",
+                  background: "var(--ielts-bg-surface)",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -812,73 +1027,197 @@ function TodayPanel({
                   : {}),
               }}
             >
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleTip(key)}
-                onKeyDown={(e) => e.key === "Enter" && toggleTip(key)}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 12,
-                  padding: "16px 16px 12px",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ fontSize: 20, lineHeight: 1.2 }}>{t.icon}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-                    <span className="ielts-text-heading" style={{ ...(done ? { textDecoration: "line-through", color: "var(--ielts-text-3)" } : {}) }}>
-                      {t.label}
-                    </span>
-                    <span className="ielts-text-caption" style={{ flexShrink: 0 }}>{t.time}</span>
-                  </div>
-                  <p className="ielts-text-body" style={{ margin: "6px 0 0", fontSize: 14, color: "var(--ielts-text-2)", ...(done ? { textDecoration: "line-through" } : {}) }}>
-                    {t.task}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className={checkPopId === key ? "ielts-check-pop" : ""}
-                  aria-label={done ? "取消完成" : "標為完成"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTaskCheck(store.currentDay, t.id, key);
-                  }}
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: "50%",
-                    border: done ? "none" : "2px solid var(--ielts-border-medium)",
-                    background: done ? "var(--ielts-accent)" : "transparent",
-                    color: "#fff",
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 14,
-                    fontWeight: 800,
-                    transition: "all 0.2s ease",
-                  }}
-                >
-                  {done ? "✓" : ""}
-                </button>
-              </div>
-              {t.tip && (
+              {editingTaskId === t.id ? (
                 <div
-                  style={{
-                    maxHeight: tipOpen ? 120 : 0,
-                    overflow: "hidden",
-                    transition: "max-height 0.3s ease",
-                    borderTop: tipOpen ? "1px solid var(--ielts-border-light)" : "none",
-                  }}
+                  style={{ padding: 14, display: "grid", gap: 10 }}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                 >
-                  <p className="ielts-text-caption" style={{ padding: "10px 16px 16px", display: "flex", gap: 8, alignItems: "flex-start" }}>
-                    <span>💡</span>
-                    <span>{t.tip}</span>
-                  </p>
+                  <span className="ielts-text-caption" style={{ fontWeight: 700 }}>
+                    編輯任務文字（會存成「第 {day} 天」專用內容）
+                  </span>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                      圖示
+                      <input className="ielts-input" value={editIcon} onChange={(e) => setEditIcon(e.target.value)} maxLength={8} />
+                    </label>
+                    <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                      預估時間
+                      <input className="ielts-input" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
+                    </label>
+                  </div>
+                  <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                    標題
+                    <input className="ielts-input" value={editLabel} onChange={(e) => setEditLabel(e.target.value)} />
+                  </label>
+                  <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                    內容說明
+                    <textarea
+                      className="ielts-textarea-notes"
+                      value={editTaskBody}
+                      onChange={(e) => setEditTaskBody(e.target.value)}
+                      rows={3}
+                      style={{ minHeight: 72 }}
+                    />
+                  </label>
+                  <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                    小提示（選填）
+                    <input className="ielts-input" value={editTip} onChange={(e) => setEditTip(e.target.value)} />
+                  </label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="ielts-btn"
+                      onClick={saveTaskEdit}
+                      style={{
+                        padding: "10px 18px",
+                        borderRadius: 10,
+                        border: "none",
+                        background: "var(--ielts-accent)",
+                        color: "#fff",
+                        fontWeight: 800,
+                        fontSize: 14,
+                        cursor: "pointer",
+                      }}
+                    >
+                      儲存
+                    </button>
+                    <button
+                      type="button"
+                      className="ielts-btn"
+                      onClick={() => setEditingTaskId(null)}
+                      style={{
+                        padding: "10px 18px",
+                        borderRadius: 10,
+                        border: "1px solid var(--ielts-border-light)",
+                        background: "var(--ielts-bg-surface)",
+                        fontWeight: 700,
+                        fontSize: 14,
+                        cursor: "pointer",
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleTip(key)}
+                    onKeyDown={(e) => e.key === "Enter" && toggleTip(key)}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 12,
+                      padding: "16px 16px 12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span style={{ fontSize: 20, lineHeight: 1.2 }}>{t.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                        <span className="ielts-text-heading" style={{ ...(done ? { textDecoration: "line-through", color: "var(--ielts-text-3)" } : {}) }}>
+                          {t.label}
+                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          <button
+                            type="button"
+                            className="ielts-btn"
+                            aria-label={`編輯任務：${t.label}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openTaskEditor(t);
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ielts-accent)",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                            }}
+                          >
+                            編輯
+                          </button>
+                          <button
+                            type="button"
+                            className="ielts-btn"
+                            aria-label={`刪除任務：${t.label}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`確定刪除「${t.label}」？`)) {
+                                store.removeDayTask(store.currentDay, t.id);
+                                if (editingTaskId === t.id) setEditingTaskId(null);
+                              }
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ielts-danger)",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                            }}
+                          >
+                            刪除
+                          </button>
+                          <span className="ielts-text-caption">{t.time}</span>
+                        </div>
+                      </div>
+                      <p className="ielts-text-body" style={{ margin: "6px 0 0", fontSize: 14, color: "var(--ielts-text-2)", ...(done ? { textDecoration: "line-through" } : {}) }}>
+                        {t.task}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={checkPopId === key ? "ielts-check-pop" : ""}
+                      aria-label={done ? "取消完成" : "標為完成"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTaskCheck(store.currentDay, t.id, key);
+                      }}
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: "50%",
+                        border: done ? "none" : "2px solid var(--ielts-border-medium)",
+                        background: done ? "var(--ielts-accent)" : "transparent",
+                        color: "#fff",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 14,
+                        fontWeight: 800,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {done ? "✓" : ""}
+                    </button>
+                  </div>
+                  {t.tip && (
+                    <div
+                      style={{
+                        maxHeight: tipOpen ? 120 : 0,
+                        overflow: "hidden",
+                        transition: "max-height 0.3s ease",
+                        borderTop: tipOpen ? "1px solid var(--ielts-border-light)" : "none",
+                      }}
+                    >
+                      <p className="ielts-text-caption" style={{ padding: "10px 16px 16px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+                        <span>💡</span>
+                        <span>{t.tip}</span>
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );
@@ -995,7 +1334,7 @@ function ProgressPanel({
         </div>
       </div>
 
-      <ScoreTrendChart data={chartRows} listening="#3b82f6" reading="#10b981" writing="#f59e0b" speaking="#8b5cf6" />
+      <ScoreTrendChart data={chartRows} listening="#56ccf2" reading="#6fcf97" writing="#f2c94c" speaking="#8b5cf6" />
 
       <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>
         <h3 className="ielts-text-heading" style={{ margin: "0 0 14px" }}>
@@ -1072,16 +1411,27 @@ function ProgressPanel({
   );
 }
 
-const CAT_COLORS: Record<FlashcardCategory, string> = {
-  vocab: "var(--ielts-accent)",
-  writing: "var(--ielts-writing)",
-  speaking: "var(--ielts-speaking)",
-  grammar: "var(--ielts-reading)",
-};
+const CATEGORY_BORDER_PALETTE = [
+  "var(--ielts-accent)",
+  "var(--ielts-writing)",
+  "var(--ielts-speaking)",
+  "var(--ielts-reading)",
+  "#8b5cf6",
+  "#ea580c",
+  "#0d9488",
+  "#db2777",
+];
+
+function categoryBorderColor(categoryId: string, defs: FlashcardCategoryDef[]): string {
+  const i = defs.findIndex((d) => d.id === categoryId);
+  if (i < 0) return "var(--ielts-accent)";
+  return CATEGORY_BORDER_PALETTE[i % CATEGORY_BORDER_PALETTE.length]!;
+}
 
 function CardsPanel({
   store,
   themeDark,
+  accentPink,
   clozePrefetchById,
   clozePrefetchErrById,
   clozePrefetchNonce,
@@ -1091,6 +1441,7 @@ function CardsPanel({
 }: {
   store: ReturnType<typeof useIELTSStore>;
   themeDark: boolean;
+  accentPink: boolean;
   clozePrefetchById: Record<string, ClozePayload>;
   clozePrefetchErrById: Record<string, string>;
   clozePrefetchNonce: number;
@@ -1098,8 +1449,10 @@ function CardsPanel({
   onClozeError: (id: string, message: string) => void;
   onRetryClozePrefetch: () => void;
 }) {
-  const [filter, setFilter] = useState<"all" | FlashcardCategory>("all");
+  const cats = store.settings.flashcardCategories;
+  const [filter, setFilter] = useState<"all" | string>("all");
   const [addOpen, setAddOpen] = useState(false);
+  const [catManageOpen, setCatManageOpen] = useState(false);
   const [quizOpen, setQuizOpen] = useState(false);
   const [dictationOpen, setDictationOpen] = useState(false);
   const [clozeOpen, setClozeOpen] = useState(false);
@@ -1113,6 +1466,9 @@ function CardsPanel({
   const [eexample, setEexample] = useState("");
   const [ecat, setEcat] = useState<FlashcardCategory>("vocab");
   const [emastered, setEmastered] = useState(false);
+  const [catLabelDrafts, setCatLabelDrafts] = useState<Record<string, string>>({});
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [deleteMoveToId, setDeleteMoveToId] = useState<Record<string, string>>({});
 
   const editingCard = useMemo(
     () => (editId ? store.flashcards.find((c) => c.id === editId) ?? null : null),
@@ -1124,18 +1480,38 @@ function CardsPanel({
     setEword(editingCard.word);
     setEmeaning(editingCard.meaning);
     setEexample(editingCard.example ?? "");
-    setEcat(editingCard.category);
+    setEcat(cats.some((c) => c.id === editingCard.category) ? editingCard.category : (cats[0]?.id ?? "vocab"));
     setEmastered(editingCard.mastered);
-  }, [editingCard]);
+  }, [editingCard, cats]);
 
   useEffect(() => {
     if (editId && !store.flashcards.some((c) => c.id === editId)) setEditId(null);
   }, [editId, store.flashcards]);
 
+  const displayFilter = useMemo(
+    () => (filter === "all" || cats.some((c) => c.id === filter) ? filter : "all"),
+    [filter, cats],
+  );
+  const newCatResolved = cats.some((c) => c.id === newCat) ? newCat : (cats[0]?.id ?? "vocab");
+  const ecatResolved = cats.some((c) => c.id === ecat) ? ecat : (cats[0]?.id ?? "vocab");
+
+  const openCategoryManager = () => {
+    const d: Record<string, string> = {};
+    for (const c of cats) d[c.id] = c.label;
+    setCatLabelDrafts(d);
+    const m: Record<string, string> = {};
+    for (const c of cats) {
+      const other = cats.find((x) => x.id !== c.id);
+      if (other) m[c.id] = other.id;
+    }
+    setDeleteMoveToId(m);
+    setCatManageOpen(true);
+  };
+
   const filtered = useMemo(() => {
-    if (filter === "all") return store.flashcards;
-    return store.flashcards.filter((c) => c.category === filter);
-  }, [store.flashcards, filter]);
+    if (displayFilter === "all") return store.flashcards;
+    return store.flashcards.filter((c) => c.category === displayFilter);
+  }, [store.flashcards, displayFilter]);
 
   const total = store.flashcards.length;
   const masteredN = store.flashcards.filter((c) => c.mastered).length;
@@ -1174,7 +1550,7 @@ function CardsPanel({
       word: word.trim(),
       meaning: meaning.trim(),
       example: example.trim() || undefined,
-      category: newCat,
+      category: newCatResolved,
     });
     setWord("");
     setMeaning("");
@@ -1197,7 +1573,7 @@ function CardsPanel({
       word: eword.trim(),
       meaning: emeaning.trim(),
       example: eexample.trim() || undefined,
-      category: ecat,
+      category: ecatResolved,
       mastered: emastered,
     });
     setEditId(null);
@@ -1210,6 +1586,8 @@ function CardsPanel({
         onClose={() => setQuizOpen(false)}
         cards={filtered}
         themeDark={themeDark}
+        accentPink={accentPink}
+        categoryDefs={cats}
         onKnow={(id) => store.setFlashcardMastered(id, true)}
         onDontKnow={(id) => store.setFlashcardMastered(id, false)}
       />
@@ -1218,6 +1596,8 @@ function CardsPanel({
         onClose={() => setDictationOpen(false)}
         cards={filtered}
         themeDark={themeDark}
+        accentPink={accentPink}
+        categoryDefs={cats}
         onKnow={(id) => store.setFlashcardMastered(id, true)}
         onDontKnow={(id) => store.setFlashcardMastered(id, false)}
       />
@@ -1226,6 +1606,8 @@ function CardsPanel({
         onClose={() => setClozeOpen(false)}
         cards={filtered}
         themeDark={themeDark}
+        accentPink={accentPink}
+        categoryDefs={cats}
         clozeById={clozePrefetchById}
         clozeErrById={clozePrefetchErrById}
         clozeResetNonce={clozePrefetchNonce}
@@ -1274,9 +1656,9 @@ function CardsPanel({
             style={{
               padding: "12px 8px",
               borderRadius: 12,
-              border: "2px solid var(--ielts-writing)",
-              background: "rgba(245, 158, 11, 0.12)",
-              color: "var(--ielts-writing)",
+              border: "2px solid var(--ielts-accent)",
+              background: "var(--ielts-accent-light)",
+              color: "var(--ielts-accent)",
               fontWeight: 800,
               fontSize: 13,
               cursor: "pointer",
@@ -1306,16 +1688,8 @@ function CardsPanel({
           </button>
         </div>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {(
-          [
-            { id: "all" as const, label: "全部" },
-            { id: "vocab" as const, label: "詞彙" },
-            { id: "writing" as const, label: "寫作" },
-            { id: "speaking" as const, label: "口說" },
-            { id: "grammar" as const, label: "語法" },
-          ] as const
-        ).map((p) => (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        {[{ id: "all" as const, label: "全部" }, ...cats.map((c) => ({ id: c.id, label: c.label }))].map((p) => (
           <button
             key={p.id}
             type="button"
@@ -1328,18 +1702,162 @@ function CardsPanel({
               fontSize: 13,
               fontWeight: 600,
               cursor: "pointer",
-              background: filter === p.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
-              color: filter === p.id ? "#fff" : "var(--ielts-text-3)",
+              background: displayFilter === p.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+              color: displayFilter === p.id ? "#fff" : "var(--ielts-text-3)",
               transition: "all 0.2s ease",
             }}
           >
             {p.label}
           </button>
         ))}
+        <button
+          type="button"
+          className="ielts-btn"
+          onClick={openCategoryManager}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 999,
+            border: "1px dashed var(--ielts-border-medium)",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            background: "transparent",
+            color: "var(--ielts-text-2)",
+          }}
+        >
+          ⚙ 管理類別
+        </button>
       </div>
 
+      {catManageOpen && (
+        <IeltsSheetPortal themeDark={themeDark} accentPink={accentPink}>
+          <div
+            className="ielts-sheet-backdrop"
+            role="presentation"
+            style={{ pointerEvents: "auto" }}
+            onClick={() => setCatManageOpen(false)}
+          />
+          <div
+            className="ielts-sheet"
+            style={{
+              pointerEvents: "auto",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
+              管理字卡類別
+            </div>
+            <p className="ielts-text-caption" style={{ marginBottom: 14, color: "var(--ielts-text-3)", lineHeight: 1.5 }}>
+              可更改顯示名稱、新增類別；刪除類別時，該類字卡會移到你所選的另一類別。至少須保留一個類別。
+            </p>
+            {cats.map((c) => (
+              <div key={c.id} className="ielts-card-static" style={{ padding: 12, marginBottom: 10, display: "grid", gap: 8 }}>
+                <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                  顯示名稱
+                  <input
+                    className="ielts-input"
+                    value={catLabelDrafts[c.id] ?? c.label}
+                    onChange={(e) => setCatLabelDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                  />
+                </label>
+                <span className="ielts-text-caption" style={{ fontSize: 11, color: "var(--ielts-text-4)" }}>
+                  內部 id：{c.id}
+                </span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    className="ielts-btn"
+                    style={solidBtn()}
+                    onClick={() => store.renameFlashcardCategory(c.id, catLabelDrafts[c.id] ?? c.label)}
+                  >
+                    儲存名稱
+                  </button>
+                  {cats.length > 1 ? (
+                    <>
+                      <span className="ielts-text-caption" style={{ fontSize: 12 }}>
+                        刪除時字卡移至
+                      </span>
+                      <select
+                        className="ielts-input"
+                        style={{ maxWidth: 200 }}
+                        value={deleteMoveToId[c.id] ?? ""}
+                        onChange={(e) => setDeleteMoveToId((m) => ({ ...m, [c.id]: e.target.value }))}
+                      >
+                        {cats
+                          .filter((x) => x.id !== c.id)
+                          .map((x) => (
+                            <option key={x.id} value={x.id}>
+                              {x.label}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="ielts-btn"
+                        style={{
+                          border: "1px solid var(--ielts-danger)",
+                          color: "var(--ielts-danger)",
+                          background: "rgba(220, 38, 38, 0.06)",
+                          padding: "8px 12px",
+                          borderRadius: 10,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                        onClick={() => {
+                          const to = deleteMoveToId[c.id];
+                          if (!to) return;
+                          const toLabel = flashcardCategoryLabel(to, cats);
+                          if (window.confirm(`刪除類別「${catLabelDrafts[c.id] ?? c.label}」，該類字卡將移至「${toLabel}」？`)) {
+                            store.removeFlashcardCategory(c.id, to);
+                          }
+                        }}
+                      >
+                        刪除此類別
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            <div className="ielts-card-static" style={{ padding: 12, marginBottom: 14, background: "var(--ielts-accent-light)" }}>
+              <div className="ielts-text-caption" style={{ fontWeight: 800, marginBottom: 8 }}>
+                新增類別
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "stretch" }}>
+                <input
+                  className="ielts-input"
+                  style={{ flex: 1, minWidth: 140 }}
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="例如：同義替換"
+                />
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  style={solidBtn()}
+                  onClick={() => {
+                    const t = newCategoryName.trim();
+                    if (!t) return;
+                    store.addFlashcardCategory(t);
+                    setNewCategoryName("");
+                  }}
+                >
+                  新增
+                </button>
+              </div>
+            </div>
+            <button type="button" className="ielts-btn" style={{ ...outlineBtn(), width: "100%" }} onClick={() => setCatManageOpen(false)}>
+              完成
+            </button>
+          </div>
+        </IeltsSheetPortal>
+      )}
+
       {addOpen && (
-        <IeltsSheetPortal themeDark={themeDark}>
+        <IeltsSheetPortal themeDark={themeDark} accentPink={accentPink}>
           <div
             className="ielts-sheet-backdrop"
             role="presentation"
@@ -1360,11 +1878,12 @@ function CardsPanel({
             </div>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               分類
-              <select className="ielts-input" value={newCat} onChange={(e) => setNewCat(e.target.value as FlashcardCategory)}>
-                <option value="vocab">詞彙</option>
-                <option value="writing">寫作</option>
-                <option value="speaking">口說</option>
-                <option value="grammar">語法</option>
+              <select className="ielts-input" value={newCatResolved} onChange={(e) => setNewCat(e.target.value)}>
+                {cats.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
@@ -1419,7 +1938,7 @@ function CardsPanel({
       )}
 
       {editId && editingCard && (
-        <IeltsSheetPortal themeDark={themeDark}>
+        <IeltsSheetPortal themeDark={themeDark} accentPink={accentPink}>
           <div
             className="ielts-sheet-backdrop"
             role="presentation"
@@ -1443,11 +1962,12 @@ function CardsPanel({
             </p>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               分類
-              <select className="ielts-input" value={ecat} onChange={(e) => setEcat(e.target.value as FlashcardCategory)}>
-                <option value="vocab">詞彙</option>
-                <option value="writing">寫作</option>
-                <option value="speaking">口說</option>
-                <option value="grammar">語法</option>
+              <select className="ielts-input" value={ecatResolved} onChange={(e) => setEcat(e.target.value)}>
+                {cats.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
@@ -1562,7 +2082,7 @@ function CardsPanel({
               display: "flex",
               alignItems: "flex-start",
               gap: 12,
-              borderLeft: `4px solid ${CAT_COLORS[c.category]}`,
+              borderLeft: `4px solid ${categoryBorderColor(c.category, cats)}`,
               paddingLeft: 16,
             }}
           >
@@ -1664,10 +2184,12 @@ function recordQuestions(t: SpeakingWritingType): string[] {
 function RecordsPanel({
   store,
   themeDark,
+  accentPink,
   setNavHidden,
 }: {
   store: ReturnType<typeof useIELTSStore>;
   themeDark: boolean;
+  accentPink: boolean;
   setNavHidden: (v: boolean) => void;
 }) {
   const router = useRouter();
@@ -1846,7 +2368,7 @@ function RecordsPanel({
       )}
 
       {addOpen && (
-        <IeltsSheetPortal themeDark={themeDark}>
+        <IeltsSheetPortal themeDark={themeDark} accentPink={accentPink}>
           <div className="ielts-sheet-backdrop" role="presentation" style={{ pointerEvents: "auto" }} onClick={() => setAddOpen(false)} />
           <div className="ielts-sheet" style={{ pointerEvents: "auto", maxHeight: "85vh", overflowY: "auto", paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))" }}>
             <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
@@ -1894,7 +2416,17 @@ function RecordsPanel({
   );
 }
 
-function ScoresTab({ store, latest }: { store: ReturnType<typeof useIELTSStore>; latest: (typeof store.scores)[0] | undefined }) {
+function skillAverageAndCount(
+  scores: { L?: number; R?: number; W?: number; S?: number }[],
+  k: "L" | "R" | "W" | "S",
+): { avg: number; count: number } | undefined {
+  const nums = scores.map((r) => r[k]).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
+  if (nums.length === 0) return undefined;
+  const sum = nums.reduce((a, b) => a + b, 0);
+  return { avg: Math.round((sum / nums.length) * 10) / 10, count: nums.length };
+}
+
+function ScoresTab({ store }: { store: ReturnType<typeof useIELTSStore> }) {
   const [date, setDate] = useState("");
   const [day, setDay] = useState(String(store.currentDay));
   const [L, setL] = useState("");
@@ -1928,11 +2460,22 @@ function ScoresTab({ store, latest }: { store: ReturnType<typeof useIELTSStore>;
     { k: "S" as const, label: "口說", icon: "📕", color: "var(--ielts-speaking)" },
   ];
 
+  const skillStats = useMemo(() => {
+    return {
+      L: skillAverageAndCount(store.scores, "L"),
+      R: skillAverageAndCount(store.scores, "R"),
+      W: skillAverageAndCount(store.scores, "W"),
+      S: skillAverageAndCount(store.scores, "S"),
+    };
+  }, [store.scores]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {skillMeta.map((s) => {
-          const val = latest?.[s.k];
+          const stat = skillStats[s.k];
+          const val = stat?.avg;
+          const count = stat?.count ?? 0;
           const ok = val != null && val >= TARGET_BAND;
           return (
             <div
@@ -1947,6 +2490,15 @@ function ScoresTab({ store, latest }: { store: ReturnType<typeof useIELTSStore>;
                 {s.icon} {s.label}
               </div>
               <div className="ielts-text-caption">目標 {TARGET_BAND}</div>
+              {count > 0 ? (
+                <div className="ielts-text-caption" style={{ marginTop: 4, color: "var(--ielts-text-3)", fontSize: 11 }}>
+                  歷史平均 · 共 {count} 筆有分
+                </div>
+              ) : (
+                <div className="ielts-text-caption" style={{ marginTop: 4, color: "var(--ielts-text-3)", fontSize: 11 }}>
+                  尚無該科分數
+                </div>
+              )}
               <div className="ielts-text-display" style={{ fontSize: 28, marginTop: 4, color: s.color }}>
                 {val ?? "—"}
               </div>
@@ -1956,7 +2508,7 @@ function ScoresTab({ store, latest }: { store: ReturnType<typeof useIELTSStore>;
                 </div>
               )}
               {val != null && (
-                <div style={{ marginTop: 10, height: 6, borderRadius: 999, background: "var(--ielts-border-light)", overflow: "hidden" }}>
+                <div style={{ marginTop: 10, height: 6, borderRadius: 999, background: "var(--ielts-progress-track)", overflow: "hidden" }}>
                   <div style={{ width: `${Math.min(100, (val / 9) * 100)}%`, height: "100%", background: s.color, borderRadius: 999 }} />
                 </div>
               )}
@@ -2187,22 +2739,42 @@ function SettingsTab({
   store,
   themeDark,
   setThemeDark,
+  accentPink,
+  setAccentPink,
   clearSheetOpen,
   setClearSheetOpen,
 }: {
   store: ReturnType<typeof useIELTSStore>;
   themeDark: boolean;
   setThemeDark: (v: boolean) => void;
+  accentPink: boolean;
+  setAccentPink: (v: boolean) => void;
   clearSheetOpen: boolean;
   setClearSheetOpen: (v: boolean) => void;
 }) {
+  const CLEAR_DATA_PHRASE = "確認清除全部";
   const [importText, setImportText] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [googleKeyDraft, setGoogleKeyDraft] = useState("");
+  const [dangerZoneOpen, setDangerZoneOpen] = useState(false);
+  const [clearConfirmStep, setClearConfirmStep] = useState<1 | 2>(1);
+  const [clearPhrase, setClearPhrase] = useState("");
 
   useEffect(() => {
     setGoogleKeyDraft(getStoredGoogleAIKey());
   }, []);
+
+  const closeClearSheet = () => {
+    setClearSheetOpen(false);
+    setClearConfirmStep(1);
+    setClearPhrase("");
+  };
+
+  const openClearSheet = () => {
+    setClearConfirmStep(1);
+    setClearPhrase("");
+    setClearSheetOpen(true);
+  };
 
   const download = () => {
     const blob = new Blob([JSON.stringify(store.exportAll(), null, 2)], { type: "application/json" });
@@ -2239,6 +2811,25 @@ function SettingsTab({
             深色模式
           </span>
           <button type="button" className="ielts-toggle" data-on={themeDark ? "true" : "false"} onClick={() => setThemeDark(!themeDark)} aria-label="切換深色模式">
+            <div className="ielts-toggle-knob" />
+          </button>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--ielts-border-light)" }}>
+          <div>
+            <div className="ielts-text-body" style={{ fontSize: 15 }}>
+              粉紅主題色
+            </div>
+            <p className="ielts-text-caption" style={{ margin: "6px 0 0", maxWidth: 260 }}>
+              重點色、頂部漸層與 Tab 強調改為粉紅色調（與深色模式可同時使用）
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ielts-toggle"
+            data-on={accentPink ? "true" : "false"}
+            onClick={() => setAccentPink(!accentPink)}
+            aria-label="切換粉紅主題色"
+          >
             <div className="ielts-toggle-knob" />
           </button>
         </div>
@@ -2330,51 +2921,130 @@ function SettingsTab({
         )}
       </div>
 
-      <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>
-        <button
-          type="button"
-          className="ielts-btn"
-          onClick={() => setClearSheetOpen(true)}
-          style={{ border: "none", background: "none", color: "var(--ielts-danger)", fontWeight: 700, cursor: "pointer", fontSize: 15 }}
-        >
-          清除所有數據…
-        </button>
+      <div className="ielts-card-static ielts-enter" style={{ padding: 16 }}>
+        {!dangerZoneOpen ? (
+          <button
+            type="button"
+            onClick={() => setDangerZoneOpen(true)}
+            style={{
+              width: "100%",
+              border: "none",
+              background: "transparent",
+              color: "var(--ielts-text-3)",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              textAlign: "left",
+              padding: "6px 2px",
+            }}
+          >
+            顯示危險區域…
+          </button>
+        ) : (
+          <div>
+            <p className="ielts-text-caption" style={{ margin: "0 0 12px", lineHeight: 1.5 }}>
+              以下為不可逆操作。建議先使用上方「匯出備份」。
+            </p>
+            <button
+              type="button"
+              className="ielts-btn"
+              onClick={openClearSheet}
+              style={{ border: "none", background: "none", color: "var(--ielts-danger)", fontWeight: 700, cursor: "pointer", fontSize: 15, padding: "4px 0" }}
+            >
+              清除所有數據…
+            </button>
+            <button
+              type="button"
+              onClick={() => setDangerZoneOpen(false)}
+              style={{
+                display: "block",
+                marginTop: 10,
+                border: "none",
+                background: "transparent",
+                color: "var(--ielts-text-3)",
+                fontSize: 12,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              收起
+            </button>
+          </div>
+        )}
       </div>
 
       {clearSheetOpen && (
-        <IeltsSheetPortal themeDark={themeDark}>
-          <div
-            className="ielts-sheet-backdrop"
-            role="presentation"
-            style={{ pointerEvents: "auto" }}
-            onClick={() => setClearSheetOpen(false)}
-          />
+        <IeltsSheetPortal themeDark={themeDark} accentPink={accentPink}>
+          <div className="ielts-sheet-backdrop" role="presentation" style={{ pointerEvents: "auto" }} onClick={closeClearSheet} />
           <div
             className="ielts-sheet"
             style={{ pointerEvents: "auto", paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))" }}
           >
-            <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
-              清除所有數據？
-            </div>
-            <p className="ielts-text-body" style={{ color: "var(--ielts-text-2)", fontSize: 14 }}>
-              將清除本機所有 IELTS 備考資料（計畫、字卡、成績、錯題、備註等），且無法還原。建議先匯出備份。
-            </p>
-            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={() => setClearSheetOpen(false)}>
-                取消
-              </button>
-              <button
-                type="button"
-                className="ielts-btn"
-                style={{ ...solidBtn(), flex: 1, background: "var(--ielts-danger)" }}
-                onClick={() => {
-                  store.clearAllLocalData();
-                  setClearSheetOpen(false);
-                }}
-              >
-                確定清除
-              </button>
-            </div>
+            {clearConfirmStep === 1 ? (
+              <>
+                <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
+                  清除資料（第一次確認）
+                </div>
+                <p className="ielts-text-body" style={{ color: "var(--ielts-text-2)", fontSize: 14, lineHeight: 1.55 }}>
+                  即將進入最後一步。清除後會刪除本機所有 IELTS 備考資料（計畫、任務自訂、字卡、成績、錯題、備註、口說／寫作記錄等），無法還原。
+                </p>
+                <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                  <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={closeClearSheet}>
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="ielts-btn"
+                    style={{ ...solidBtn(), flex: 1, background: "var(--ielts-danger)" }}
+                    onClick={() => setClearConfirmStep(2)}
+                  >
+                    我了解，繼續
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
+                  清除資料（第二次確認）
+                </div>
+                <p className="ielts-text-body" style={{ color: "var(--ielts-text-2)", fontSize: 14, lineHeight: 1.55, marginBottom: 12 }}>
+                  請在下方輸入「<strong style={{ color: "var(--ielts-text-1)" }}>{CLEAR_DATA_PHRASE}</strong>」後再按確定清除。
+                </p>
+                <input
+                  className="ielts-input"
+                  value={clearPhrase}
+                  onChange={(e) => setClearPhrase(e.target.value)}
+                  placeholder={CLEAR_DATA_PHRASE}
+                  autoComplete="off"
+                  style={{ width: "100%" }}
+                />
+                <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                  <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={closeClearSheet}>
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="ielts-btn"
+                    disabled={clearPhrase.trim() !== CLEAR_DATA_PHRASE}
+                    style={{
+                      ...solidBtn(),
+                      flex: 1,
+                      background: clearPhrase.trim() === CLEAR_DATA_PHRASE ? "var(--ielts-danger)" : "var(--ielts-border-medium)",
+                      opacity: clearPhrase.trim() === CLEAR_DATA_PHRASE ? 1 : 0.7,
+                      cursor: clearPhrase.trim() === CLEAR_DATA_PHRASE ? "pointer" : "not-allowed",
+                    }}
+                    onClick={() => {
+                      if (clearPhrase.trim() !== CLEAR_DATA_PHRASE) return;
+                      store.clearAllLocalData();
+                      closeClearSheet();
+                      setDangerZoneOpen(false);
+                    }}
+                  >
+                    確定清除
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </IeltsSheetPortal>
       )}

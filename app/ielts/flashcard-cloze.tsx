@@ -5,35 +5,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCloze, type ClozePayload } from "./fetch-cloze-client";
 import { getStoredGoogleAIKey, storeGoogleAiKeyFromPaste } from "./llm-key-storage";
 import { speakEnglish, stopSpeaking } from "./speech";
-import type { Flashcard, FlashcardCategory } from "./store";
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+import { buildStudySessionOrder } from "./study-order";
+import { flashcardCategoryLabel, type Flashcard, type FlashcardCategoryDef } from "./store";
 
 function normAnswer(s: string): string {
   return s.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-const CAT_LABEL: Record<FlashcardCategory, string> = {
-  vocab: "詞彙",
-  writing: "寫作",
-  speaking: "口說",
-  grammar: "語法",
-};
-
 type Props = {
   open: boolean;
   onClose: () => void;
   cards: Flashcard[];
+  categoryDefs: FlashcardCategoryDef[];
   onKnow: (id: string) => void;
   onDontKnow: (id: string) => void;
   themeDark?: boolean;
+  accentPink?: boolean;
   /** 已由 AI 產生的填空（依字卡 id）；開啟本頁時會持續寫入 */
   clozeById: Record<string, ClozePayload>;
   clozeErrById: Record<string, string>;
@@ -80,9 +67,11 @@ export function FlashcardCloze({
   open,
   onClose,
   cards,
+  categoryDefs,
   onKnow,
   onDontKnow,
   themeDark,
+  accentPink,
   clozeById,
   clozeErrById,
   clozeResetNonce,
@@ -120,7 +109,7 @@ export function FlashcardCloze({
   useEffect(() => {
     if (!open || cards.length === 0) return;
     claimedIdsRef.current.clear();
-    setOrder(shuffle(cards));
+    setOrder(buildStudySessionOrder(cards));
     setIdx(0);
     setInput("");
     setFeedback("idle");
@@ -129,7 +118,9 @@ export function FlashcardCloze({
     setCloze(null);
     setLoadState("loading");
     setLoadError("");
-  }, [open, cards]);
+    // 僅開啟時排程；避免作答中 cards 參考變動重置題序與 AI 進度
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     claimedIdsRef.current.clear();
@@ -140,6 +131,10 @@ export function FlashcardCloze({
   }, [open]);
 
   const current = order[idx] ?? null;
+  const currentId = current?.id ?? "";
+  /** 只訂閱當前字卡的題目／錯誤，避免背景幫別張卡 prefetch 時整份 clozeById 換參考而誤觸 effect 清空 input */
+  const clozeHitForCurrent = currentId ? clozeById[currentId] : undefined;
+  const clozeErrForCurrent = currentId ? clozeErrById[currentId] : undefined;
 
   function prioritizedOrder(base: Flashcard[], fromIdx: number): Flashcard[] {
     if (base.length === 0) return [];
@@ -204,7 +199,7 @@ export function FlashcardCloze({
   }, [open, simpleMode, order, onClozeFetched, onClozeError, clozeResetNonce]);
 
   useEffect(() => {
-    if (!open || !current) return;
+    if (!open || !currentId) return;
     setInput("");
     setFeedback("idle");
     setShowExampleHint(false);
@@ -217,14 +212,14 @@ export function FlashcardCloze({
       return () => window.clearTimeout(t);
     }
 
-    const err = clozeErrById[current.id];
+    const err = clozeErrForCurrent;
     if (err) {
       setCloze(null);
       setLoadError(err);
       setLoadState("error");
       return;
     }
-    const hit = clozeById[current.id];
+    const hit = clozeHitForCurrent;
     if (hit) {
       setCloze(hit);
       setLoadState("ready");
@@ -235,7 +230,7 @@ export function FlashcardCloze({
     setCloze(null);
     setLoadState("loading");
     setLoadError("");
-  }, [open, current?.id, simpleMode, clozeById, clozeErrById, current]);
+  }, [open, currentId, simpleMode, clozeHitForCurrent, clozeErrForCurrent]);
 
   const total = order.length;
   const readyInRound = useMemo(() => order.filter((c) => clozeById[c.id]).length, [order, clozeById]);
@@ -263,6 +258,19 @@ export function FlashcardCloze({
     [current, idx, onClose, onDontKnow, onKnow, order.length],
   );
 
+  const goPrev = useCallback(() => {
+    if (idx <= 0) return;
+    setIdx((i) => i - 1);
+  }, [idx]);
+
+  const goSkipNext = useCallback(() => {
+    if (!current || idx + 1 >= order.length) return;
+    setFeedback("idle");
+    setInput("");
+    setShowExampleHint(false);
+    setIdx((i) => i + 1);
+  }, [current, idx, order.length]);
+
   const submit = useCallback(() => {
     if (!current || feedback !== "idle" || loadState !== "ready") return;
     if (!expectedForCompare) return;
@@ -284,6 +292,7 @@ export function FlashcardCloze({
     <div
       className="ielts-root"
       data-theme={themeDark ? "dark" : undefined}
+      data-accent={accentPink ? "pink" : undefined}
       style={{
         position: "fixed",
         inset: 0,
@@ -295,8 +304,8 @@ export function FlashcardCloze({
         paddingBottom: "max(16px, env(safe-area-inset-bottom))",
       }}
     >
-      <div style={{ height: 4, borderRadius: 999, background: "var(--ielts-border-light)", overflow: "hidden", marginBottom: 16 }}>
-        <div style={{ height: "100%", width: `${Math.min(100, progress)}%`, background: "var(--ielts-writing)", transition: "width 0.25s ease" }} />
+      <div style={{ height: 4, borderRadius: 999, background: "var(--ielts-progress-track)", overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ height: "100%", width: `${Math.min(100, progress)}%`, background: "var(--ielts-progress-fill)", transition: "width 0.25s ease" }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <button
@@ -310,6 +319,48 @@ export function FlashcardCloze({
         <span className="ielts-text-caption" style={{ fontWeight: 700 }}>
           {simpleMode ? "簡易填空" : "AI 句子填空"} {idx + 1} / {total}
         </span>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button
+          type="button"
+          className="ielts-btn"
+          disabled={idx === 0}
+          onClick={goPrev}
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid var(--ielts-border-light)",
+            background: "var(--ielts-bg-hover)",
+            color: "var(--ielts-text-2)",
+            fontWeight: 800,
+            fontSize: 14,
+            cursor: idx === 0 ? "not-allowed" : "pointer",
+            opacity: idx === 0 ? 0.45 : 1,
+          }}
+        >
+          上一題
+        </button>
+        <button
+          type="button"
+          className="ielts-btn"
+          disabled={idx >= total - 1}
+          onClick={goSkipNext}
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid var(--ielts-border-light)",
+            background: "var(--ielts-bg-hover)",
+            color: "var(--ielts-text-2)",
+            fontWeight: 800,
+            fontSize: 14,
+            cursor: idx >= total - 1 ? "not-allowed" : "pointer",
+            opacity: idx >= total - 1 ? 0.45 : 1,
+          }}
+        >
+          下一題（跳過）
+        </button>
       </div>
 
       <div
@@ -335,7 +386,7 @@ export function FlashcardCloze({
             color: "var(--ielts-accent)",
           }}
         >
-          {CAT_LABEL[current.category]}
+          {flashcardCategoryLabel(current.category, categoryDefs)}
         </span>
 
         {loadState === "loading" && (

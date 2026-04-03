@@ -1,65 +1,137 @@
 /* IELTS 備考 — Notion 風設計代幣與動畫（僅在此路由 layout 內生效） */
 
+/* 淺色預設：米白主調 + 柔和粉米主色（Light Theme） */
 .ielts-root {
-  /* 背景層次 */
-  --ielts-bg-base: #f7f7f5;
+  --ielts-bg-base: #f7f4ef;
   --ielts-bg-surface: #ffffff;
-  --ielts-bg-hover: #f1f1ef;
+  --ielts-bg-hover: #efeae3;
+  --ielts-bg-surface-secondary: #f2eee8;
 
-  --ielts-accent: #2f6fed;
-  --ielts-accent-light: #ebf2ff;
+  --ielts-accent: #f25278;
+  --ielts-accent-light: #ffe4ea;
+  --ielts-accent-soft: #ff8fa8;
+  --ielts-accent-emphasis: #d93b63;
 
-  --ielts-listening: #3b82f6;
-  --ielts-reading: #10b981;
-  --ielts-writing: #f59e0b;
+  --ielts-listening: #56ccf2;
+  --ielts-reading: #6fcf97;
+  --ielts-writing: #f2c94c;
   --ielts-speaking: #8b5cf6;
 
-  --ielts-success: #16a34a;
-  --ielts-warning: #d97706;
-  --ielts-danger: #dc2626;
-  --ielts-pomodoro: #ef4444;
+  --ielts-success: #6fcf97;
+  --ielts-warning: #f2c94c;
+  --ielts-danger: #eb5757;
+  --ielts-info: #56ccf2;
+  --ielts-pomodoro: #ff6b8a;
 
-  --ielts-text-1: #1a1a1a;
-  --ielts-text-2: #4a4a4a;
-  --ielts-text-3: #8a8a8a;
-  --ielts-text-4: #b0b0b0;
+  --ielts-text-1: #2b2b2b;
+  --ielts-text-2: #6b6b6b;
+  --ielts-text-3: #9a9a9a;
+  --ielts-text-4: #b8b8b8;
+  --ielts-text-inverse: #ffffff;
 
-  --ielts-border-light: #ebebeb;
-  --ielts-border-medium: #d4d4d4;
+  --ielts-border-light: #e5dfd6;
+  --ielts-border-medium: #d6d0c7;
 
-  --ielts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --ielts-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --ielts-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --ielts-progress-track: #f0eae4;
+  --ielts-progress-fill: #ff6b8a;
 
-  --ielts-hero-gradient: linear-gradient(135deg, #1b3a6b 0%, #2f6fed 100%);
-  --ielts-banner-dark: #1a1a1a;
+  --ielts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --ielts-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --ielts-shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.05);
+
+  --ielts-hero-gradient: linear-gradient(135deg, #d93b63 0%, #f25278 48%, #ff6b8a 100%);
+  --ielts-banner-dark: #2b2b2b;
 
   background: var(--ielts-bg-base);
   color: var(--ielts-text-1);
   min-height: 100dvh;
 }
 
+/* 粉紅主題（淺色）：較飽和粉背景，與米白預設區隔 */
+.ielts-root[data-accent="pink"] {
+  --ielts-bg-base: #ffd1dc;
+  --ielts-bg-surface: #ffffff;
+  --ielts-bg-hover: #fceef2;
+  --ielts-bg-surface-secondary: #ffe8ee;
+
+  --ielts-accent: #ff6b9a;
+  --ielts-accent-light: #fff1f4;
+  --ielts-accent-soft: #ff8fa8;
+  --ielts-accent-emphasis: #ff3e6c;
+
+  --ielts-border-light: #e5dfd6;
+  --ielts-border-medium: #d6d0c7;
+
+  --ielts-progress-track: #f0eae4;
+  --ielts-progress-fill: #ff6b8a;
+
+  --ielts-hero-gradient: linear-gradient(135deg, #ff3e6c 0%, #ff6b9a 50%, #ff8aab 100%);
+  --ielts-pomodoro: #ff3e6c;
+}
+
+.ielts-root[data-accent="pink"] .ielts-strip-custom {
+  border-left-color: var(--ielts-accent-emphasis);
+}
+
 .ielts-root[data-theme="dark"] {
-  --ielts-bg-base: #1c1c1e;
-  --ielts-bg-surface: #2c2c2e;
-  --ielts-bg-hover: #3a3a3c;
+  --ielts-bg-base: #0f1115;
+  --ielts-bg-surface: #1a1d24;
+  --ielts-bg-hover: #232730;
+  --ielts-bg-surface-secondary: #232730;
 
   --ielts-accent: #5b9cff;
   --ielts-accent-light: #1e3a5f;
+  --ielts-accent-soft: #7eb6ff;
+  --ielts-accent-emphasis: #3b82f6;
+
+  --ielts-progress-track: #2a2f3a;
+  --ielts-progress-fill: #5b9cff;
 
   --ielts-text-1: #f5f5f5;
   --ielts-text-2: #c4c4c4;
   --ielts-text-3: #8e8e93;
   --ielts-text-4: #636366;
+  --ielts-text-inverse: #ffffff;
 
-  --ielts-border-light: #3a3a3c;
-  --ielts-border-medium: #48484a;
+  --ielts-border-light: #2a2f3a;
+  --ielts-border-medium: #353b47;
 
-  --ielts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --ielts-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
-  --ielts-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --ielts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --ielts-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --ielts-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
 
-  --ielts-banner-dark: #0d0d0d;
+  --ielts-banner-dark: #0a0c10;
+
+  /* 深色下聽讀寫說維持較高對比（淺色預設已改為米白系 status 色） */
+  --ielts-listening: #3b82f6;
+  --ielts-reading: #10b981;
+  --ielts-writing: #f59e0b;
+  --ielts-speaking: #8b5cf6;
+}
+
+/* 須放在 dark 之後，否則 --ielts-accent 會被深色預設覆蓋 */
+.ielts-root[data-theme="dark"][data-accent="pink"] {
+  /* 與通用深色共用基底；hover 略帶玫瑰調以呼應粉紅主題 */
+  --ielts-bg-base: #0f1115;
+  --ielts-bg-surface: #1a1d24;
+  --ielts-bg-hover: #252028;
+
+  --ielts-accent: #ff6b9a;
+  --ielts-accent-light: #3d242e;
+  --ielts-accent-emphasis: #ff3e6c;
+
+  --ielts-hero-gradient: linear-gradient(135deg, #4a1526 0%, #ff3e6c 45%, #ff6b9a 100%);
+  --ielts-pomodoro: #ff6b9a;
+
+  --ielts-progress-track: #2a2f3a;
+  --ielts-progress-fill: #ff6b9a;
+
+  --ielts-border-light: #2a2f3a;
+  --ielts-border-medium: #353b47;
+}
+
+.ielts-root[data-theme="dark"][data-accent="pink"] .ielts-strip-custom {
+  border-left-color: var(--ielts-accent-emphasis);
 }
 
 /* 字階 */
@@ -204,6 +276,9 @@
 .ielts-strip-speaking {
   border-left: 4px solid var(--ielts-speaking);
 }
+.ielts-strip-custom {
+  border-left: 4px solid var(--ielts-accent);
+}
 .ielts-strip-mock {
   border-left: 4px solid var(--ielts-writing);
 }
@@ -235,21 +310,46 @@
   }
 }
 
-/* 熱力圖格 */
+/* 熱力圖格（淺色：米白／粉米階層 + 可讀字色） */
 .ielts-heat-0 {
-  background: #f1f1ef;
+  background: #f2eee8;
+  color: var(--ielts-text-2);
 }
 .ielts-heat-1 {
-  background: #dbeafe;
+  background: #ffdce3;
+  color: #8b3a52;
 }
 .ielts-heat-2 {
-  background: #93c5fd;
+  background: #ffb8c6;
+  color: #6b2d42;
 }
 .ielts-heat-3 {
-  background: #3b82f6;
+  background: #ff8fa8;
   color: #fff;
 }
 .ielts-heat-4 {
+  background: #f25278;
+  color: #fff;
+}
+
+/* 深色模式：改為深底 + 淺字／高飽和格，避免繼承全域淺字落在淺底上 */
+.ielts-root[data-theme="dark"] .ielts-heat-0 {
+  background: #232730;
+  color: #a8b0c0;
+}
+.ielts-root[data-theme="dark"] .ielts-heat-1 {
+  background: #2a3548;
+  color: #cbd5e1;
+}
+.ielts-root[data-theme="dark"] .ielts-heat-2 {
+  background: #1e3a5f;
+  color: #bfdbfe;
+}
+.ielts-root[data-theme="dark"] .ielts-heat-3 {
+  background: #2563eb;
+  color: #fff;
+}
+.ielts-root[data-theme="dark"] .ielts-heat-4 {
   background: #1d4ed8;
   color: #fff;
 }

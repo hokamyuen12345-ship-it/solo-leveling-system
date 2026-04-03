@@ -5,7 +5,20 @@ import { IELTS_GOOGLE_AI_KEY_LS } from "./llm-key-storage";
 
 export type IELTSSection = "today" | "calendar" | "cards" | "records" | "scores" | "settings";
 
-export type FlashcardCategory = "vocab" | "writing" | "speaking" | "grammar";
+/** 字卡分類 id（自訂類別存在 settings.flashcardCategories） */
+export type FlashcardCategory = string;
+
+export type FlashcardCategoryDef = {
+  id: string;
+  label: string;
+};
+
+export const DEFAULT_FLASHCARD_CATEGORIES: FlashcardCategoryDef[] = [
+  { id: "vocab", label: "詞彙" },
+  { id: "writing", label: "寫作" },
+  { id: "speaking", label: "口說" },
+  { id: "grammar", label: "語法" },
+];
 
 export type Flashcard = {
   id: string;
@@ -26,6 +39,8 @@ export type SpeakingWritingEntry = {
   myAnswer: string;
   improvedAnswer: string;
   notes?: string;
+  /** 附圖（壓縮後 data URL），詳情頁預覽用 */
+  attachmentImageDataUrl?: string;
   createdAt: string; // YYYY-MM-DD
   updatedAt: string; // YYYY-MM-DD
 };
@@ -72,6 +87,8 @@ export type Settings = {
   dailyGoalMinutes: number;
   pomodoroFocusMin: number;
   pomodoroBreakMin: number;
+  /** 字卡分類：id 穩定供既有字卡／匯入 JSON 對應；label 為顯示名稱 */
+  flashcardCategories: FlashcardCategoryDef[];
 };
 
 export type PomodoroPhase = "idle" | "focus" | "break" | "pause";
@@ -167,6 +184,9 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
     const response = typeof obj.response === "string" ? obj.response : "";
     const myAnswer = typeof obj.myAnswer === "string" ? obj.myAnswer : response;
     const improvedAnswer = typeof obj.improvedAnswer === "string" ? obj.improvedAnswer : "";
+    const rawAtt = obj.attachmentImageDataUrl;
+    const attachmentImageDataUrl =
+      typeof rawAtt === "string" && rawAtt.startsWith("data:image/") && rawAtt.length < 4_000_000 ? rawAtt : undefined;
     out.push({
       id,
       type,
@@ -174,6 +194,7 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
       myAnswer,
       improvedAnswer,
       notes,
+      attachmentImageDataUrl,
       createdAt,
       updatedAt,
     });
@@ -262,7 +283,28 @@ function defaultSettings(): Settings {
     dailyGoalMinutes: 150,
     pomodoroFocusMin: 25,
     pomodoroBreakMin: 5,
+    flashcardCategories: DEFAULT_FLASHCARD_CATEGORIES.map((c) => ({ ...c })),
   };
+}
+
+function parseFlashcardCategories(raw: unknown): FlashcardCategoryDef[] {
+  if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_FLASHCARD_CATEGORIES.map((c) => ({ ...c }));
+  const out: FlashcardCategoryDef[] = [];
+  const seen = new Set<string>();
+  for (const x of raw) {
+    if (!x || typeof x !== "object") continue;
+    const o = x as { id?: unknown; label?: unknown };
+    const id = typeof o.id === "string" ? o.id.trim() : "";
+    const label = typeof o.label === "string" ? o.label.trim() : "";
+    if (!id || !label || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, label });
+  }
+  return out.length > 0 ? out : DEFAULT_FLASHCARD_CATEGORIES.map((c) => ({ ...c }));
+}
+
+export function flashcardCategoryLabel(categoryId: string, defs: FlashcardCategoryDef[]): string {
+  return defs.find((d) => d.id === categoryId)?.label ?? categoryId;
 }
 
 /** Strip fields removed from Settings so old localStorage / backups still load. */
@@ -329,7 +371,16 @@ export function useIELTSStore() {
     if (localStorage.getItem(KEY_FLASHCARDS) === null) lsSet(KEY_FLASHCARDS, []);
     if (localStorage.getItem(IELTS_SW_RECORDS_KEY) === null) lsSet(IELTS_SW_RECORDS_KEY, []);
     const rawSettings = lsGet<Record<string, unknown>>(KEY_SETTINGS);
-    setSettings({ ...defaultSettings(), ...(rawSettings ? sanitizeSettingsRaw(rawSettings) : {}) } as Settings);
+    let mergedSettings: Settings = defaultSettings();
+    if (rawSettings) {
+      const cleaned = { ...(sanitizeSettingsRaw(rawSettings) as Record<string, unknown>) };
+      const cats = parseFlashcardCategories(cleaned.flashcardCategories);
+      delete cleaned.flashcardCategories;
+      mergedSettings = { ...defaultSettings(), ...cleaned, flashcardCategories: cats } as Settings;
+    }
+    setSettings(mergedSettings);
+    const validCat = new Set(mergedSettings.flashcardCategories.map((c) => c.id));
+    const fallbackCat = mergedSettings.flashcardCategories[0]?.id ?? "vocab";
     setOverride(lsGet<Overrides>(KEY_OVERRIDE) ?? {});
     setCompletion(lsGet<Completion>(KEY_COMPLETION) ?? {});
     setNotes(lsGet<Notes>(KEY_NOTES) ?? {});
@@ -344,7 +395,11 @@ export function useIELTSStore() {
       breakMin: (lsGet<Settings>(KEY_SETTINGS) ?? defaultSettings()).pomodoroBreakMin,
       startedAt: null,
     });
-    setFlashcards(dedupeFlashcardsById(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []));
+    setFlashcards(
+      dedupeFlashcardsById(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []).map((c) =>
+        validCat.has(c.category) ? c : { ...c, category: fallbackCat },
+      ),
+    );
     setSwRecords(migrateSwRecords(lsGet<unknown>(IELTS_SW_RECORDS_KEY) ?? []));
     setReady(true);
   }, []);
@@ -417,6 +472,69 @@ export function useIELTSStore() {
       return next;
     });
   }, []);
+
+  /** 在指定日新增一筆任務（會寫入 schedule override；若該日尚無 override 會先複製預設任務再追加） */
+  const addDayTask = useCallback(
+    (day: number, fields: Partial<Pick<DayTask, "time" | "icon" | "label" | "task" | "tip">>) => {
+      setOverride((prevOverride) => {
+        const base = scheduleDefault.find((p) => p.day === day)?.tasks ?? [];
+        const current = prevOverride[day] ?? base.map((t) => ({ ...t }));
+        const newTask: DayTask = {
+          id: `custom-${crypto.randomUUID()}`,
+          time: fields.time?.trim() || "30 分",
+          icon: fields.icon?.trim() || "✨",
+          label: fields.label?.trim() || "自訂任務",
+          task: fields.task?.trim() || "（請補充說明）",
+          tip: fields.tip?.trim() ?? "",
+        };
+        return { ...prevOverride, [day]: [...current, newTask] };
+      });
+    },
+    [scheduleDefault],
+  );
+
+  const removeDayTask = useCallback(
+    (day: number, taskId: string) => {
+      setOverride((prevOverride) => {
+        const base = scheduleDefault.find((p) => p.day === day)?.tasks ?? [];
+        const current = prevOverride[day] ?? base.map((t) => ({ ...t }));
+        const next = current.filter((t) => t.id !== taskId);
+        return { ...prevOverride, [day]: next };
+      });
+      setCompletion((prev) => {
+        const k = `${day}_${taskId}`;
+        if (!(k in prev)) return prev;
+        const next = { ...prev };
+        delete next[k];
+        return next;
+      });
+    },
+    [scheduleDefault],
+  );
+
+  const updateDayTask = useCallback(
+    (day: number, taskId: string, patch: Partial<Pick<DayTask, "time" | "icon" | "label" | "task" | "tip">>) => {
+      setOverride((prevOverride) => {
+        const base = scheduleDefault.find((p) => p.day === day)?.tasks ?? [];
+        const current = prevOverride[day] ?? base.map((x) => ({ ...x }));
+        let found = false;
+        const next = current.map((task) => {
+          if (task.id !== taskId) return task;
+          found = true;
+          const n = { ...task };
+          if (patch.icon !== undefined) n.icon = patch.icon.trim() || n.icon;
+          if (patch.time !== undefined) n.time = patch.time.trim() || n.time;
+          if (patch.label !== undefined) n.label = patch.label.trim() || n.label;
+          if (patch.task !== undefined) n.task = patch.task.trim() || n.task;
+          if (patch.tip !== undefined) n.tip = patch.tip.trim();
+          return n;
+        });
+        if (!found) return prevOverride;
+        return { ...prevOverride, [day]: next };
+      });
+    },
+    [scheduleDefault],
+  );
 
   const addMockScore = useCallback((row: Omit<MockScore, "id">) => {
     setScores((prev) => [{ ...row, id: crypto.randomUUID() }, ...prev]);
@@ -566,6 +684,39 @@ export function useIELTSStore() {
     [],
   );
 
+  const addFlashcardCategory = useCallback((label: string) => {
+    const t = label.trim();
+    if (!t) return;
+    const id = `cat_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    setSettings((s) => ({
+      ...s,
+      flashcardCategories: [...s.flashcardCategories, { id, label: t }],
+    }));
+  }, []);
+
+  const renameFlashcardCategory = useCallback((id: string, label: string) => {
+    const t = label.trim();
+    if (!t) return;
+    setSettings((s) => ({
+      ...s,
+      flashcardCategories: s.flashcardCategories.map((c) => (c.id === id ? { ...c, label: t } : c)),
+    }));
+  }, []);
+
+  const removeFlashcardCategory = useCallback((id: string, moveCardsToId: string) => {
+    let didRemove = false;
+    setSettings((s) => {
+      if (s.flashcardCategories.length <= 1) return s;
+      if (!s.flashcardCategories.some((c) => c.id === id)) return s;
+      if (!s.flashcardCategories.some((c) => c.id === moveCardsToId) || moveCardsToId === id) return s;
+      didRemove = true;
+      return { ...s, flashcardCategories: s.flashcardCategories.filter((c) => c.id !== id) };
+    });
+    if (didRemove) {
+      setFlashcards((prev) => prev.map((c) => (c.category === id ? { ...c, category: moveCardsToId } : c)));
+    }
+  }, []);
+
   const addSwRecord = useCallback((item: Pick<SpeakingWritingEntry, "type" | "prompt"> & { notes?: string }): string | null => {
     const iso = todayIso();
     const prompt = item.prompt.trim();
@@ -713,9 +864,11 @@ export function useIELTSStore() {
       swRecords: SpeakingWritingEntry[];
     }>;
     if (obj.settings) {
-      const raw = { ...(obj.settings as Record<string, unknown>) };
-      delete raw.targetOverallBand;
-      setSettings({ ...defaultSettings(), ...raw, schemaVersion: SCHEMA_VERSION } as Settings);
+      const rawS = { ...(obj.settings as Record<string, unknown>) };
+      delete rawS.targetOverallBand;
+      const cats = parseFlashcardCategories(rawS.flashcardCategories);
+      delete rawS.flashcardCategories;
+      setSettings({ ...defaultSettings(), ...rawS, flashcardCategories: cats, schemaVersion: SCHEMA_VERSION } as Settings);
     }
     if (obj.scheduleOverride) setOverride(obj.scheduleOverride);
     if (obj.completion) setCompletion(obj.completion);
@@ -753,6 +906,9 @@ export function useIELTSStore() {
     setDayNote,
     override,
     setOverrideTasks,
+    addDayTask,
+    removeDayTask,
+    updateDayTask,
     scores,
     addMockScore,
     removeMockScore,
@@ -780,6 +936,9 @@ export function useIELTSStore() {
     clearAllLocalData,
     exportAll,
     importAll,
+    addFlashcardCategory,
+    renameFlashcardCategory,
+    removeFlashcardCategory,
   };
 }
 

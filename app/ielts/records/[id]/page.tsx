@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { MutableRefObject, RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { IELTS_SW_RECORDS_KEY, migrateSwRecords, type SpeakingWritingEntry, type SpeakingWritingType } from "@/app/ielts/store";
 
 function recordTypeLabel(t: SpeakingWritingType): string {
@@ -108,11 +109,13 @@ function HighlightEditor({
   onChange,
   placeholder,
   editorRef,
+  topMargin = 10,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   editorRef: RefObject<HTMLDivElement | null> | MutableRefObject<HTMLDivElement | null>;
+  topMargin?: number;
 }) {
   const flushFromDom = useCallback(() => {
     const el = editorRef.current;
@@ -142,7 +145,7 @@ function HighlightEditor({
       data-empty={value ? "false" : "true"}
       spellCheck={false}
       style={{
-        marginTop: 10,
+        marginTop: topMargin,
         minHeight: HIGHLIGHT_EDITOR_MIN_HEIGHT_PX,
         fontSize: 15,
         lineHeight: 1.6,
@@ -188,6 +191,52 @@ function paramIdToString(v: string | string[] | undefined): string {
   }
 }
 
+const MAX_ATTACHMENT_DATA_URL_CHARS = 2_200_000;
+
+/** 縮圖並轉成 JPEG data URL，避免塞爆 localStorage */
+function imageFileToCompressedDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve(null);
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        resolve(null);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1000;
+        const maxH = 1400;
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        if (w <= 0 || h <= 0) {
+          resolve(null);
+          return;
+        }
+        const scale = Math.min(1, maxW / w, maxH / h);
+        const cw = Math.round(w * scale);
+        const ch = Math.round(h * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, cw, ch);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        if (dataUrl.length > MAX_ATTACHMENT_DATA_URL_CHARS) resolve(null);
+        else resolve(dataUrl);
+      };
+      img.onerror = () => resolve(null);
+      img.src = result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function IeltsRecordDetailPage() {
   const params = useParams();
   const id = paramIdToString(params?.id);
@@ -196,11 +245,20 @@ export default function IeltsRecordDetailPage() {
   const [mode, setMode] = useState<"my" | "improved">("my");
   const [myAns, setMyAns] = useState("");
   const [improvedAns, setImprovedAns] = useState("");
+  const [attachmentImageDataUrl, setAttachmentImageDataUrl] = useState<string | undefined>(undefined);
+  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
 
   const myRef = useRef<HTMLDivElement | null>(null);
   const improvedRef = useRef<HTMLDivElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const persistAnswersRef = useRef<() => void>(() => {});
-  const flushSnapshotRef = useRef({ routeId: "", recId: null as string | null, my: "", imp: "" });
+  const flushSnapshotRef = useRef({
+    routeId: "",
+    recId: null as string | null,
+    my: "",
+    imp: "",
+    img: undefined as string | undefined,
+  });
   const skipAutoSaveUntilHydratedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -211,6 +269,7 @@ export default function IeltsRecordDetailPage() {
         setRec(r);
         setMyAns(r.myAnswer ?? "");
         setImprovedAns(r.improvedAnswer ?? "");
+        setAttachmentImageDataUrl(r.attachmentImageDataUrl);
         return true;
       }
       return false;
@@ -235,17 +294,41 @@ export default function IeltsRecordDetailPage() {
     const iso = new Date().toISOString().slice(0, 10);
     const list = readAll();
     const next = list.map((x) =>
-      x.id === r.id ? { ...x, myAnswer: myAns, improvedAnswer: improvedAns, updatedAt: iso } : x,
+      x.id === r.id
+        ? {
+            ...x,
+            myAnswer: myAns,
+            improvedAnswer: improvedAns,
+            ...(attachmentImageDataUrl ? { attachmentImageDataUrl } : { attachmentImageDataUrl: undefined }),
+            updatedAt: iso,
+          }
+        : x,
     );
     writeAll(next);
-    setRec((prev) => (prev && prev.id === r.id ? { ...prev, myAnswer: myAns, improvedAnswer: improvedAns, updatedAt: iso } : prev));
-  }, [improvedAns, myAns, rec, id]);
+    setRec((prev) =>
+      prev && prev.id === r.id
+        ? {
+            ...prev,
+            myAnswer: myAns,
+            improvedAnswer: improvedAns,
+            attachmentImageDataUrl,
+            updatedAt: iso,
+          }
+        : prev,
+    );
+  }, [attachmentImageDataUrl, improvedAns, myAns, rec, id]);
 
   persistAnswersRef.current = persistAnswers;
 
   useLayoutEffect(() => {
-    flushSnapshotRef.current = { routeId: id, recId: rec?.id ?? null, my: myAns, imp: improvedAns };
-  }, [id, rec?.id, myAns, improvedAns]);
+    flushSnapshotRef.current = {
+      routeId: id,
+      recId: rec?.id ?? null,
+      my: myAns,
+      imp: improvedAns,
+      img: attachmentImageDataUrl,
+    };
+  }, [attachmentImageDataUrl, id, rec?.id, myAns, improvedAns]);
 
   useEffect(() => {
     if (!rec || rec.id !== id) return;
@@ -255,7 +338,7 @@ export default function IeltsRecordDetailPage() {
     }
     const t = window.setTimeout(() => persistAnswersRef.current(), 450);
     return () => window.clearTimeout(t);
-  }, [myAns, improvedAns, rec, id]);
+  }, [attachmentImageDataUrl, myAns, improvedAns, rec, id]);
 
   const writeSnapshotToStorage = useCallback(() => {
     const s = flushSnapshotRef.current;
@@ -263,7 +346,15 @@ export default function IeltsRecordDetailPage() {
     const iso = new Date().toISOString().slice(0, 10);
     const list = readAll();
     const next = list.map((x) =>
-      x.id === s.recId ? { ...x, myAnswer: s.my, improvedAnswer: s.imp, updatedAt: iso } : x,
+      x.id === s.recId
+        ? {
+            ...x,
+            myAnswer: s.my,
+            improvedAnswer: s.imp,
+            ...(s.img ? { attachmentImageDataUrl: s.img } : { attachmentImageDataUrl: undefined }),
+            updatedAt: iso,
+          }
+        : x,
     );
     writeAll(next);
   }, []);
@@ -287,6 +378,20 @@ export default function IeltsRecordDetailPage() {
   useEffect(() => {
     return () => writeSnapshotToStorage();
   }, [writeSnapshotToStorage]);
+
+  useEffect(() => {
+    if (!imageLightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setImageLightboxOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [imageLightboxOpen]);
 
   const prompt = rec?.prompt ?? "";
 
@@ -415,11 +520,137 @@ export default function IeltsRecordDetailPage() {
               ))}
             </div>
 
-            {mode === "my" ? (
-              <HighlightEditor value={myAns} onChange={setMyAns} placeholder="在這裡寫「我的答案」…" editorRef={myRef} />
-            ) : (
-              <HighlightEditor value={improvedAns} onChange={setImprovedAns} placeholder="在這裡寫「進階版本」…" editorRef={improvedRef} />
-            )}
+            <div style={{ marginTop: 14 }}>
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!f || !f.type.startsWith("image/")) return;
+                  const dataUrl = await imageFileToCompressedDataUrl(f);
+                  if (!dataUrl) {
+                    window.alert("無法處理此圖片，請換一張較小的檔案。");
+                    return;
+                  }
+                  setAttachmentImageDataUrl(dataUrl);
+                }}
+              />
+              {attachmentImageDataUrl ? (
+                <div
+                  className="ielts-card-static"
+                  style={{
+                    padding: 10,
+                    borderRadius: 12,
+                    border: "1px solid var(--ielts-border-light)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setImageLightboxOpen(true)}
+                    aria-label="放大查看附圖"
+                    style={{
+                      padding: 0,
+                      margin: 0,
+                      border: "none",
+                      background: "transparent",
+                      width: "100%",
+                      cursor: "zoom-in",
+                      borderRadius: 8,
+                      display: "block",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- data URL 使用者附圖預覽 */}
+                    <img
+                      src={attachmentImageDataUrl}
+                      alt=""
+                      style={{ width: "100%", height: "auto", display: "block", borderRadius: 8, verticalAlign: "middle" }}
+                    />
+                  </button>
+                  <div className="ielts-text-caption" style={{ marginTop: 6, color: "var(--ielts-text-3)", textAlign: "center" }}>
+                    點擊圖片可放大檢視
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="ielts-btn"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: 10,
+                        border: "1px solid var(--ielts-border-light)",
+                        background: "var(--ielts-bg-hover)",
+                        color: "var(--ielts-text-2)",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      更換圖片
+                    </button>
+                    <button
+                      type="button"
+                      className="ielts-btn"
+                      onClick={() => setAttachmentImageDataUrl(undefined)}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: 10,
+                        border: "1px solid var(--ielts-border-light)",
+                        background: "var(--ielts-bg-hover)",
+                        color: "var(--ielts-danger, #b91c1c)",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      移除圖片
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px dashed var(--ielts-border-light)",
+                    background: "var(--ielts-bg-hover)",
+                    color: "var(--ielts-text-2)",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: "pointer",
+                    width: "100%",
+                  }}
+                >
+                  上傳附圖（顯示在答案區上方）
+                </button>
+              )}
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              {mode === "my" ? (
+                <HighlightEditor
+                  value={myAns}
+                  onChange={setMyAns}
+                  placeholder="在這裡寫「我的答案」…"
+                  editorRef={myRef}
+                  topMargin={0}
+                />
+              ) : (
+                <HighlightEditor
+                  value={improvedAns}
+                  onChange={setImprovedAns}
+                  placeholder="在這裡寫「進階版本」…"
+                  editorRef={improvedRef}
+                  topMargin={0}
+                />
+              )}
+            </div>
           </>
         ) : (
           <div className="ielts-card-static" style={{ padding: 18 }}>
@@ -429,6 +660,68 @@ export default function IeltsRecordDetailPage() {
           </div>
         )}
       </main>
+      {typeof document !== "undefined" &&
+        imageLightboxOpen &&
+        attachmentImageDataUrl &&
+        createPortal(
+          <div
+            className="ielts-root"
+            role="presentation"
+            onClick={() => setImageLightboxOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 10000,
+              background: "rgba(0,0,0,0.9)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
+            }}
+          >
+            <button
+              type="button"
+              className="ielts-btn"
+              onClick={() => setImageLightboxOpen(false)}
+              style={{
+                position: "absolute",
+                top: "max(12px, env(safe-area-inset-top))",
+                right: "max(12px, env(safe-area-inset-right))",
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.35)",
+                background: "rgba(255,255,255,0.12)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: "pointer",
+                zIndex: 1,
+              }}
+            >
+              關閉
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element -- lightbox 放大 data URL */}
+            <img
+              src={attachmentImageDataUrl}
+              alt=""
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: "100%",
+                maxHeight: "min(92vh, 100%)",
+                width: "auto",
+                height: "auto",
+                objectFit: "contain",
+                borderRadius: 10,
+                cursor: "default",
+              }}
+            />
+            <p className="ielts-text-caption" style={{ color: "rgba(255,255,255,0.65)", marginTop: 12, textAlign: "center" }}>
+              點擊暗處或按 Esc 關閉
+            </p>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

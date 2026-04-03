@@ -3,7 +3,8 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { speakEnglish, stopSpeaking } from "./speech";
-import type { Flashcard, FlashcardCategory } from "./store";
+import { buildStudySessionOrder } from "./study-order";
+import { flashcardCategoryLabel, type Flashcard, type FlashcardCategoryDef } from "./store";
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -33,24 +34,19 @@ function prefixFullyMatches(wordChars: string[], inputChars: string[], len: numb
   return true;
 }
 
-const CAT_LABEL: Record<FlashcardCategory, string> = {
-  vocab: "詞彙",
-  writing: "寫作",
-  speaking: "口說",
-  grammar: "語法",
-};
-
 type Props = {
   open: boolean;
   onClose: () => void;
   cards: Flashcard[];
+  categoryDefs: FlashcardCategoryDef[];
   onKnow: (id: string) => void;
   onDontKnow: (id: string) => void;
   themeDark?: boolean;
+  accentPink?: boolean;
 };
 
 /** 默寫：只看字卡「解釋」，輸入對應英文；逐字母提示格會隨正確輸入變暗。 */
-export function FlashcardDictation({ open, onClose, cards, onKnow, onDontKnow, themeDark }: Props) {
+export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow, onDontKnow, themeDark, accentPink }: Props) {
   const [order, setOrder] = useState<Flashcard[]>([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
@@ -60,12 +56,14 @@ export function FlashcardDictation({ open, onClose, cards, onKnow, onDontKnow, t
 
   useEffect(() => {
     if (!open || cards.length === 0) return;
-    setOrder(shuffle(cards));
+    setOrder(buildStudySessionOrder(cards));
     setIdx(0);
     setInput("");
     setFeedback("idle");
     setShowExampleHint(false);
-  }, [open, cards]);
+    // 僅開啟時排程，避免作答中父層 cards 參考變動而重開一輪
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) stopSpeaking();
@@ -110,6 +108,19 @@ export function FlashcardDictation({ open, onClose, cards, onKnow, onDontKnow, t
     [current, idx, onClose, onDontKnow, onKnow, order.length],
   );
 
+  const goPrev = useCallback(() => {
+    if (idx <= 0) return;
+    setIdx((i) => i - 1);
+  }, [idx]);
+
+  const goSkipNext = useCallback(() => {
+    if (!current || idx + 1 >= order.length) return;
+    setFeedback("idle");
+    setInput("");
+    setShowExampleHint(false);
+    setIdx((i) => i + 1);
+  }, [current, idx, order.length]);
+
   const submit = useCallback(() => {
     if (!current || feedback !== "idle") return;
     if (normAnswer(input) === normAnswer(current.word)) {
@@ -130,6 +141,7 @@ export function FlashcardDictation({ open, onClose, cards, onKnow, onDontKnow, t
     <div
       className="ielts-root"
       data-theme={themeDark ? "dark" : undefined}
+      data-accent={accentPink ? "pink" : undefined}
       style={{
         position: "fixed",
         inset: 0,
@@ -141,8 +153,8 @@ export function FlashcardDictation({ open, onClose, cards, onKnow, onDontKnow, t
         paddingBottom: "max(16px, env(safe-area-inset-bottom))",
       }}
     >
-      <div style={{ height: 4, borderRadius: 999, background: "var(--ielts-border-light)", overflow: "hidden", marginBottom: 16 }}>
-        <div style={{ height: "100%", width: `${Math.min(100, progress)}%`, background: "var(--ielts-writing)", transition: "width 0.25s ease" }} />
+      <div style={{ height: 4, borderRadius: 999, background: "var(--ielts-progress-track)", overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ height: "100%", width: `${Math.min(100, progress)}%`, background: "var(--ielts-progress-fill)", transition: "width 0.25s ease" }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <button
@@ -156,6 +168,48 @@ export function FlashcardDictation({ open, onClose, cards, onKnow, onDontKnow, t
         <span className="ielts-text-caption" style={{ fontWeight: 700 }}>
           默寫 {idx + 1} / {total}
         </span>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button
+          type="button"
+          className="ielts-btn"
+          disabled={idx === 0}
+          onClick={goPrev}
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid var(--ielts-border-light)",
+            background: "var(--ielts-bg-hover)",
+            color: "var(--ielts-text-2)",
+            fontWeight: 800,
+            fontSize: 14,
+            cursor: idx === 0 ? "not-allowed" : "pointer",
+            opacity: idx === 0 ? 0.45 : 1,
+          }}
+        >
+          上一題
+        </button>
+        <button
+          type="button"
+          className="ielts-btn"
+          disabled={idx >= total - 1}
+          onClick={goSkipNext}
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid var(--ielts-border-light)",
+            background: "var(--ielts-bg-hover)",
+            color: "var(--ielts-text-2)",
+            fontWeight: 800,
+            fontSize: 14,
+            cursor: idx >= total - 1 ? "not-allowed" : "pointer",
+            opacity: idx >= total - 1 ? 0.45 : 1,
+          }}
+        >
+          下一題（跳過）
+        </button>
       </div>
 
       <div
@@ -181,7 +235,7 @@ export function FlashcardDictation({ open, onClose, cards, onKnow, onDontKnow, t
             color: "var(--ielts-accent)",
           }}
         >
-          {CAT_LABEL[current.category]}
+          {flashcardCategoryLabel(current.category, categoryDefs)}
         </span>
 
         <div className="ielts-text-caption" style={{ color: "var(--ielts-writing)", fontWeight: 800, letterSpacing: "0.12em", fontSize: 11, margin: 0 }}>

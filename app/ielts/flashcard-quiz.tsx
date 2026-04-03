@@ -1,63 +1,67 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { speakEnglish, stopSpeaking } from "./speech";
-import type { Flashcard, FlashcardCategory } from "./store";
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-const CAT_LABEL: Record<FlashcardCategory, string> = {
-  vocab: "詞彙",
-  writing: "寫作",
-  speaking: "口說",
-  grammar: "語法",
-};
+import { buildStudySessionOrder } from "./study-order";
+import { flashcardCategoryLabel, type Flashcard, type FlashcardCategoryDef } from "./store";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   cards: Flashcard[];
+  categoryDefs: FlashcardCategoryDef[];
   onKnow: (id: string) => void;
   onDontKnow: (id: string) => void;
   themeDark?: boolean;
+  accentPink?: boolean;
 };
 
-export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeDark }: Props) {
+export function FlashcardQuiz({ open, onClose, cards, categoryDefs, onKnow, onDontKnow, themeDark, accentPink }: Props) {
   const [order, setOrder] = useState<Flashcard[]>([]);
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [slide, setSlide] = useState<"in" | "out-left" | "out-right">("in");
+  const advanceTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open || cards.length === 0) return;
-    setOrder(shuffle(cards));
+    setOrder(buildStudySessionOrder(cards));
     setIdx(0);
     setFlipped(false);
     setSlide("in");
-    // 只在開啟測驗時洗牌；作答中若 cards 因 mastered 更新，不重設進度
+    // 僅在開啟時排程：去重 + 未掌握加權；作答中 mastered 更新不打斷進度
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只用開啟瞬間的 cards，不依賴 cards 避免中途重排
   }, [open]);
 
   useEffect(() => {
     if (!open) stopSpeaking();
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (advanceTimerRef.current !== null) window.clearTimeout(advanceTimerRef.current);
+    };
+  }, []);
+
   const current = order[idx] ?? null;
   const total = order.length;
   const progress = total ? ((idx + (flipped ? 0.5 : 0)) / total) * 100 : 0;
 
+  const clearAdvanceTimer = useCallback(() => {
+    if (advanceTimerRef.current !== null) {
+      window.clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+  }, []);
+
   const advance = useCallback(
     (dir: "left" | "right", known: boolean) => {
       if (!current) return;
+      clearAdvanceTimer();
       setSlide(dir === "left" ? "out-left" : "out-right");
-      window.setTimeout(() => {
+      advanceTimerRef.current = window.setTimeout(() => {
+        advanceTimerRef.current = null;
         if (known) onKnow(current.id);
         else onDontKnow(current.id);
         setFlipped(false);
@@ -69,8 +73,24 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
         }
       }, 220);
     },
-    [current, idx, onClose, onDontKnow, onKnow, order.length],
+    [clearAdvanceTimer, current, idx, onClose, onDontKnow, onKnow, order.length],
   );
+
+  const goPrev = useCallback(() => {
+    clearAdvanceTimer();
+    if (idx <= 0) return;
+    setFlipped(false);
+    setSlide("in");
+    setIdx((i) => i - 1);
+  }, [clearAdvanceTimer, idx]);
+
+  const goSkipNext = useCallback(() => {
+    clearAdvanceTimer();
+    if (idx + 1 >= order.length) return;
+    setFlipped(false);
+    setSlide("in");
+    setIdx((i) => i + 1);
+  }, [clearAdvanceTimer, idx, order.length]);
 
   const portalReady = typeof document !== "undefined";
 
@@ -80,6 +100,7 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
       <div
         className="ielts-root"
         data-theme={themeDark ? "dark" : undefined}
+        data-accent={accentPink ? "pink" : undefined}
         style={{
           position: "fixed",
           inset: 0,
@@ -91,8 +112,8 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
           paddingBottom: "max(16px, env(safe-area-inset-bottom))",
         }}
       >
-        <div style={{ height: 4, borderRadius: 999, background: "var(--ielts-border-light)", overflow: "hidden", marginBottom: 16 }}>
-          <div style={{ height: "100%", width: `${Math.min(100, progress)}%`, background: "var(--ielts-accent)", transition: "width 0.25s ease" }} />
+        <div style={{ height: 4, borderRadius: 999, background: "var(--ielts-progress-track)", overflow: "hidden", marginBottom: 16 }}>
+          <div style={{ height: "100%", width: `${Math.min(100, progress)}%`, background: "var(--ielts-progress-fill)", transition: "width 0.25s ease" }} />
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <button
@@ -106,6 +127,48 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
           <span className="ielts-text-caption" style={{ fontWeight: 700 }}>
             {idx + 1} / {total}
           </span>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <button
+            type="button"
+            className="ielts-btn"
+            disabled={idx === 0}
+            onClick={goPrev}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid var(--ielts-border-light)",
+              background: "var(--ielts-bg-hover)",
+              color: "var(--ielts-text-2)",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: idx === 0 ? "not-allowed" : "pointer",
+              opacity: idx === 0 ? 0.45 : 1,
+            }}
+          >
+            上一題
+          </button>
+          <button
+            type="button"
+            className="ielts-btn"
+            disabled={idx >= total - 1}
+            onClick={goSkipNext}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid var(--ielts-border-light)",
+              background: "var(--ielts-bg-hover)",
+              color: "var(--ielts-text-2)",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: idx >= total - 1 ? "not-allowed" : "pointer",
+              opacity: idx >= total - 1 ? 0.45 : 1,
+            }}
+          >
+            下一題（跳過）
+          </button>
         </div>
 
         <div
@@ -134,7 +197,7 @@ export function FlashcardQuiz({ open, onClose, cards, onKnow, onDontKnow, themeD
                     marginBottom: 16,
                   }}
                 >
-                  {CAT_LABEL[current.category]}
+                  {flashcardCategoryLabel(current.category, categoryDefs)}
                 </span>
                 <div className="ielts-text-hero" style={{ fontSize: "clamp(36px, 10vw, 52px)", color: "var(--ielts-text-1)" }}>
                   {current.word}
