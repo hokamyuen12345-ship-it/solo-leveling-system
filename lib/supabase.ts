@@ -32,8 +32,12 @@ export const SYNC_KEYS = [
   "slq_achievements_v1",
   "slq_voice_enabled",
   "slq_custom_quests_v1",
+  /** Top Priority 自訂任務清單（與 slq_custom_quests_v1 分開） */
+  "slq_top_custom_quests_v1",
   "slq_task_sections_v1",
   "slq_hidden_quest_ids_v1",
+  /** 從 Danger Zone 隱藏的內建懲罰 id（8–12），可還原 */
+  "slq_hidden_builtin_debuffs_v1",
   /** 任務名稱／EXP／時長覆寫 — 影響 Top Priority 排序與顯示，需跨裝置一致 */
   "slq_quest_overrides_v1",
   "slq_avatar_data_url_v1",

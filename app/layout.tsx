@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Orbitron, Inter, JetBrains_Mono } from "next/font/google";
+import { MissionTimerBar } from "@/components/MissionTimerBar";
 import "./globals.css";
 
 const orbitron = Orbitron({
@@ -40,6 +41,7 @@ export default function RootLayout({
     <html lang="zh" className={`${orbitron.variable} ${inter.variable} ${jetbrainsMono.variable}`}>
       <body className={inter.className}>
         {children}
+        <MissionTimerBar />
       </body>
     </html>
   );

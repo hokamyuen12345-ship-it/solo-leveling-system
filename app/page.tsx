@@ -3,8 +3,17 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, typ
 import type { DragEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { getSupabase, SYNC_KEYS } from "@/lib/supabase";
+import {
+  clearMissionTimerSession,
+  clearPendingExpire,
+  readMissionTimerSession,
+  readPendingExpire,
+  writeMissionTimerSession,
+  type MissionTimerStoredQuest,
+} from "@/lib/missionTimerSession";
 import { expBarFromTotal, levelFromTotalExp } from "@/lib/leveling";
 import { MAX_QUEST_EXP, formatExpValue, formatSignedTodayExp } from "@/lib/formatExp";
 import { useAvatar } from "@/hooks/useAvatar";
@@ -236,8 +245,23 @@ interface Quest {
   minutes: number;
   /** 自訂任務：計時或一鍵完成；內建任務未設時依 type 推斷 */
   completionMode?: QuestCompletionMode;
-  /** 進度百分比（0–100，由使用者在任務設定中手動填寫） */
+  /** 今日進度：目前量／目標量，顯示如 30/2000 */
+  progressCurrent?: number;
+  progressTarget?: number;
+  /** 舊版僅百分比；仍會讀取顯示，新設定請用 progressCurrent + progressTarget */
   progressPct?: number;
+}
+
+function missionStoredToQuest(s: MissionTimerStoredQuest): Quest {
+  return {
+    id: s.id,
+    type: s.type as QuestType,
+    label: s.label,
+    exp: s.exp,
+    attr: s.attr as AttrKey,
+    minutes: s.minutes,
+    completionMode: s.completionMode === "timer" || s.completionMode === "instant" ? s.completionMode : undefined,
+  };
 }
 
 /** 自訂任務（存 localStorage） */
@@ -249,7 +273,8 @@ type CustomQuestStored = {
   minutes: number;
   attr: AttrKey;
   mode: QuestCompletionMode;
-  /** 進度百分比（0–100，由使用者在任務設定中手動填寫） */
+  progressCurrent?: number;
+  progressTarget?: number;
   progressPct?: number;
 };
 
@@ -261,8 +286,70 @@ type TopQuestStored = {
   minutes: number;
   attr: AttrKey;
   mode: QuestCompletionMode;
+  progressCurrent?: number;
+  progressTarget?: number;
   progressPct?: number;
 };
+
+type QuestOverrideSlice = Partial<
+  Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct" | "progressCurrent" | "progressTarget">
+>;
+
+/** 任務卡片上「進度」一行：優先顯示 目前/目標，否則舊版 n% */
+function formatQuestProgressLine(q: Quest): string | null {
+  const cur = q.progressCurrent;
+  const tgt = q.progressTarget;
+  if (typeof cur === "number" && Number.isFinite(cur) && typeof tgt === "number" && Number.isFinite(tgt) && tgt > 0) {
+    const a = Math.max(0, Math.floor(cur));
+    const b = Math.max(1, Math.floor(tgt));
+    return `${a}/${b}`;
+  }
+  if (typeof q.progressPct === "number" && Number.isFinite(q.progressPct)) {
+    return `${Math.max(0, Math.min(100, Math.round(q.progressPct)))}%`;
+  }
+  return null;
+}
+
+/** 任務設定／新增：兩欄皆空 = 清除；否則須為有效 目前／目標 */
+function parseProgressPair(
+  numStr: string,
+  denStr: string,
+): { ok: true; clear: true } | { ok: true; clear: false; current: number; target: number } | { ok: false; message: string } {
+  const a = numStr.trim();
+  const b = denStr.trim();
+  if (!a && !b) return { ok: true, clear: true };
+  const nc = Number.parseInt(a, 10);
+  const nt = Number.parseInt(b, 10);
+  if (!Number.isFinite(nt) || nt <= 0) return { ok: false, message: "目標數字須為大於 0 的整數；兩欄皆留空可清除進度。" };
+  if (!Number.isFinite(nc) || nc < 0) return { ok: false, message: "目前數字須為 ≥ 0 的整數。" };
+  return { ok: true, clear: false, current: nc, target: nt };
+}
+
+/** 將任務與 questOverrides[id] 合併（QUESTS、AI、隨機隱藏、週 Boss、緊急任務等共用） */
+function applyQuestOverrideMerge(q: Quest, o: QuestOverrideSlice | undefined): Quest {
+  if (!o) return q;
+  const hasFraction =
+    typeof o.progressCurrent === "number" &&
+    typeof o.progressTarget === "number" &&
+    o.progressTarget > 0;
+  return {
+    ...q,
+    label: typeof o.label === "string" ? o.label : q.label,
+    minutes: typeof o.minutes === "number" ? o.minutes : q.minutes,
+    exp: typeof o.exp === "number" ? o.exp : q.exp,
+    completionMode:
+      o.completionMode === "timer" || o.completionMode === "instant" ? o.completionMode : q.completionMode,
+    progressCurrent: hasFraction ? o.progressCurrent : undefined,
+    progressTarget: hasFraction ? o.progressTarget : undefined,
+    progressPct: hasFraction
+      ? undefined
+      : typeof o.progressPct === "number"
+        ? o.progressPct
+        : typeof q.progressPct === "number"
+          ? q.progressPct
+          : undefined,
+  };
+}
 
 const CUSTOM_QUEST_MIN_ID = 100_000;
 const CUSTOM_QUESTS_KEY = "slq_custom_quests_v1";
@@ -271,6 +358,9 @@ const HIDDEN_QUEST_IDS_KEY = "slq_hidden_quest_ids_v1";
 const TOP_CUSTOM_QUEST_MIN_ID = 200_000;
 const TOP_CUSTOM_QUESTS_KEY = "slq_top_custom_quests_v1";
 const CUSTOM_DEBUFFS_KEY = "slq_custom_debuffs_v1";
+/** 自訂 Danger Zone 懲罰 ID 區間（內建為 8–12） */
+const CUSTOM_DEBUFF_MIN_ID = 50_000;
+const HIDDEN_BUILTIN_DEBUFF_IDS_KEY = "slq_hidden_builtin_debuffs_v1";
 
 const DEFAULT_SECTION_ORDER: TaskSectionId[] = ["daily", "boss", "emergency"];
 
@@ -308,6 +398,8 @@ function customStoredToQuest(c: CustomQuestStored): Quest {
     attr: c.attr,
     minutes: c.minutes,
     completionMode: c.mode,
+    progressCurrent: typeof c.progressCurrent === "number" ? c.progressCurrent : undefined,
+    progressTarget: typeof c.progressTarget === "number" ? c.progressTarget : undefined,
     progressPct: typeof c.progressPct === "number" ? c.progressPct : undefined,
   };
 }
@@ -321,6 +413,8 @@ function topStoredToQuest(c: TopQuestStored): Quest {
     attr: c.attr,
     minutes: c.minutes,
     completionMode: c.mode,
+    progressCurrent: typeof c.progressCurrent === "number" ? c.progressCurrent : undefined,
+    progressTarget: typeof c.progressTarget === "number" ? c.progressTarget : undefined,
     progressPct: typeof c.progressPct === "number" ? c.progressPct : undefined,
   };
 }
@@ -1056,7 +1150,6 @@ function QuestCard({
   priority,
   primaryActionLabel,
   onDelete,
-  progressPct,
 }: {
   quest: Quest;
   accentColor: string;
@@ -1074,12 +1167,11 @@ function QuestCard({
   primaryActionLabel?: string;
   /** 自訂任務刪除 */
   onDelete?: () => void;
-  /** 今日進度百分比（0–100），供顯示用 */
-  progressPct?: number;
 }) {
   const stars = getQuestDifficulty(quest);
   const [hover, setHover] = useState(false);
   const displayLabel = optionalDisplayLabel ?? quest.label;
+  const progressLine = formatQuestProgressLine(quest);
   const pad = priority ? "18px 20px" : "14px 16px";
   const labelSize = priority ? "1rem" : "0.9rem";
   return (
@@ -1125,9 +1217,9 @@ function QuestCard({
             </span>
             <span className="font-mono-num" style={{ color: done ? "#3A5A4A" : "#2ECC71" }}>Reward: +{formatExpValue(quest.exp)} EXP</span>
           </div>
-          {typeof progressPct === "number" && Number.isFinite(progressPct) && (
+          {progressLine != null && (
             <div style={{ marginTop: "4px", fontSize: "0.6rem", color: "#64748B" }}>
-              進度：<span className="font-mono-num">{Math.max(0, Math.min(100, Math.round(progressPct)))}%</span>
+              進度：<span className="font-mono-num">{progressLine}</span>
             </div>
           )}
           {hover && !done && (
@@ -1319,9 +1411,14 @@ interface TimerProps {
   onPlayClick?: () => void;
   onTimeExpired?: () => void;
   onTenSecondsRemaining?: () => void;
+  /** 從 session 還原背景計時（僅掛載時套用一次） */
+  resume?: { endTimeMs: number; totalSecs: number } | null;
+  onResumeConsumed?: () => void;
+  /** 寫入 session 後由父層導向 /ielts */
+  onBackgroundIELTS?: () => void;
 }
 
-function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillBonusPct = 0, onPlayMissionStart, onPlayTimerInit, onPlayMinuteTick, onPlayCountdownTick, onPlayCancel, onPlayClick, onTimeExpired, onTenSecondsRemaining }: TimerProps) {
+function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillBonusPct = 0, onPlayMissionStart, onPlayTimerInit, onPlayMinuteTick, onPlayCountdownTick, onPlayCancel, onPlayClick, onTimeExpired, onTenSecondsRemaining, resume, onResumeConsumed, onBackgroundIELTS }: TimerProps) {
   const [totalSecs, setTotalSecs] = useState(quest.minutes * 60);
   const [remaining, setRemaining] = useState(quest.minutes * 60);
   const [running, setRunning] = useState(false);
@@ -1337,6 +1434,22 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
   const lastCountdownSec = useRef<number>(-1);
   const tenSecondsSpoken = useRef(false);
   const isBoss = quest.type === "boss";
+
+  useEffect(() => {
+    if (!resume) return;
+    endTimeRef.current = resume.endTimeMs;
+    setTotalSecs(resume.totalSecs);
+    const left = Math.max(0, Math.ceil((resume.endTimeMs - Date.now()) / 1000));
+    setRemaining(left);
+    if (left <= 0) {
+      setFinished(true);
+      setRunning(false);
+    } else {
+      setRunning(true);
+    }
+    onResumeConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 僅掛載時還原一次
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => { onPlayTimerInit?.(); }, 200);
@@ -1630,6 +1743,47 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
             </button>
           </div>
 
+          {running && !finished && onBackgroundIELTS ? (
+            <button
+              type="button"
+              className="hud-btn"
+              onClick={(e) => {
+                addRipple(e, "ielts");
+                onPlayClick?.();
+                const sq: MissionTimerStoredQuest = {
+                  id: quest.id,
+                  type: quest.type,
+                  label: quest.label,
+                  exp: quest.exp,
+                  attr: quest.attr,
+                  minutes: quest.minutes,
+                  completionMode: quest.completionMode,
+                };
+                writeMissionTimerSession({ quest: sq, endTimeMs: endTimeRef.current, totalSecs });
+                onBackgroundIELTS();
+              }}
+              style={{
+                marginTop: "18px",
+                maxWidth: "min(340px, 92vw)",
+                padding: "12px 20px",
+                borderRadius: "8px",
+                border: "1px solid rgba(56,189,248,0.55)",
+                background: "rgba(56,189,248,0.12)",
+                color: "#A5D4F7",
+                fontSize: "0.65rem",
+                fontWeight: 800,
+                letterSpacing: "0.12em",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {ripple?.target === "ielts" && (
+                <span key={ripple.id} className="hud-btn-ripple" style={{ left: ripple.x, top: ripple.y, width: 20, height: 20 }} />
+              )}
+              📖 IELTS 備考（背景計時 · 倒數繼續）
+            </button>
+          ) : null}
+
           <div style={{marginTop:"28px",color:"#64748b",fontSize:"0.55rem",letterSpacing:"3px",fontWeight:400,textAlign:"center"}}>
             REWARD: <span style={{color:rankColor,fontWeight:600,textShadow:`0 0 10px ${rankGlow}`}}>+{formatExpValue(quest.exp)} pt</span>
             &nbsp;·&nbsp;<span style={{color:rankColor,opacity:0.9,textShadow:`0 0 8px ${rankGlow}`}}>{quest.attr} +3</span>
@@ -1706,7 +1860,9 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<"pending" | "local" | "synced">("pending");
   const [user, setUser]           = useState<User | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const router = useRouter();
   const [activeTimer, setActiveTimer] = useState<typeof QUESTS[0] | null>(null);
+  const [timerResume, setTimerResume] = useState<{ endTimeMs: number; totalSecs: number } | null>(null);
   const [aiQuests, setAiQuests] = useState<Quest[]>([]);
   const [unlockedAchievements, setUnlockedAchievements] = useState<AchievementId[]>([]);
   const [justUnlocked, setJustUnlocked] = useState<Achievement | null>(null);
@@ -1759,12 +1915,11 @@ export default function Home() {
 
   // ===== 任務自訂設定（localStorage）=====
   const QUEST_OVERRIDES_KEY = "slq_quest_overrides_v1";
-  const [questOverrides, setQuestOverrides] = useState<
-    Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct">>>
-  >({});
+  const [questOverrides, setQuestOverrides] = useState<Record<number, QuestOverrideSlice>>({});
   const [customQuests, setCustomQuests] = useState<CustomQuestStored[]>([]);
   const [topCustomQuests, setTopCustomQuests] = useState<TopQuestStored[]>([]);
   const [hiddenQuestIds, setHiddenQuestIds] = useState<number[]>([]);
+  const [hiddenBuiltinDebuffIds, setHiddenBuiltinDebuffIds] = useState<number[]>([]);
   const [sectionOrder, setSectionOrder] = useState<TaskSectionId[]>(() => [...DEFAULT_SECTION_ORDER]);
   const [sectionCollapsed, setSectionCollapsed] = useState<Partial<Record<TaskSectionId, boolean>>>({});
   const [addQuestZone, setAddQuestZone] = useState<TaskSectionId | null>(null);
@@ -1779,7 +1934,8 @@ export default function Home() {
   const [addTopMinutes, setAddTopMinutes] = useState("25");
   const [addTopAttr, setAddTopAttr] = useState<AttrKey>("EXE");
   const [addTopMode, setAddTopMode] = useState<QuestCompletionMode>("instant");
-  const [addTopProgress, setAddTopProgress] = useState("");
+  const [addTopProgressNum, setAddTopProgressNum] = useState("");
+  const [addTopProgressDen, setAddTopProgressDen] = useState("");
   const [addDebuffOpen, setAddDebuffOpen] = useState(false);
   const [addDebuffLabel, setAddDebuffLabel] = useState("");
   const [addDebuffExp, setAddDebuffExp] = useState("-10");
@@ -1789,7 +1945,8 @@ export default function Home() {
   const [editingMinutes, setEditingMinutes] = useState("");
   const [editingExp, setEditingExp] = useState("");
   const [editingCompletionMode, setEditingCompletionMode] = useState<QuestCompletionMode>("timer");
-  const [editingProgress, setEditingProgress] = useState("");
+  const [editingProgressNum, setEditingProgressNum] = useState("");
+  const [editingProgressDen, setEditingProgressDen] = useState("");
   const [settingsPortalReady, setSettingsPortalReady] = useState(false);
 
   useEffect(() => {
@@ -1827,12 +1984,8 @@ export default function Home() {
       const raw = localStorage.getItem(QUEST_OVERRIDES_KEY);
       if (!raw) setQuestOverrides({});
       else {
-        const parsed = JSON.parse(raw) as Record<
-          string,
-          { label?: string; minutes?: number; exp?: number; completionMode?: QuestCompletionMode; progressPct?: number }
-        >;
-        const next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct">>> =
-          {};
+        const parsed = JSON.parse(raw) as Record<string, QuestOverrideSlice>;
+        const next: Record<number, QuestOverrideSlice> = {};
         Object.entries(parsed).forEach(([k, v]) => {
           const id = Number(k);
           if (!Number.isFinite(id)) return;
@@ -1842,6 +1995,8 @@ export default function Home() {
           if (typeof v.exp === "number") next[id]!.exp = v.exp;
           if (v.completionMode === "timer" || v.completionMode === "instant") next[id]!.completionMode = v.completionMode;
           if (typeof v.progressPct === "number") next[id]!.progressPct = v.progressPct;
+          if (typeof v.progressCurrent === "number") next[id]!.progressCurrent = v.progressCurrent;
+          if (typeof v.progressTarget === "number") next[id]!.progressTarget = v.progressTarget;
         });
         setQuestOverrides(next);
       }
@@ -1872,6 +2027,16 @@ export default function Home() {
             parsed.filter((x) => x && typeof x.id === "number" && typeof x.label === "string" && typeof x.exp === "number"),
           );
       }
+      const hb = localStorage.getItem(HIDDEN_BUILTIN_DEBUFF_IDS_KEY);
+      if (hb) {
+        const parsed = JSON.parse(hb) as unknown;
+        const builtinIds = new Set(DEBUFFS.map((b) => b.id));
+        if (Array.isArray(parsed)) {
+          setHiddenBuiltinDebuffIds(
+            parsed.filter((x): x is number => typeof x === "number" && builtinIds.has(x)),
+          );
+        }
+      }
       const s = localStorage.getItem(TASK_SECTIONS_PREFS_KEY);
       if (s) {
         const p = JSON.parse(s) as { order?: TaskSectionId[]; collapsed?: Partial<Record<TaskSectionId, boolean>> };
@@ -1883,41 +2048,44 @@ export default function Home() {
     }
   }, [syncStatus]);
 
-  const saveQuestOverrides = useCallback(
-    (next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct">>>) => {
+  const saveQuestOverrides = useCallback((next: Record<number, QuestOverrideSlice>) => {
     setQuestOverrides(next);
     try {
       localStorage.setItem(QUEST_OVERRIDES_KEY, JSON.stringify(next));
     } catch {
       // ignore
     }
-    },
-    [],
-  );
+  }, []);
 
   const questsBase = useMemo(() => {
     const hidden = new Set(hiddenQuestIds);
-    const built = QUESTS.map((q) => {
-      const o = questOverrides[q.id];
-      if (!o) return q;
-      return {
-        ...q,
-        label: typeof o.label === "string" ? o.label : q.label,
-        minutes: typeof o.minutes === "number" ? o.minutes : q.minutes,
-        exp: typeof o.exp === "number" ? o.exp : q.exp,
-         completionMode:
-          o.completionMode === "timer" || o.completionMode === "instant" ? o.completionMode : q.completionMode,
-        progressPct:
-          typeof o.progressPct === "number"
-            ? o.progressPct
-            : typeof q.progressPct === "number"
-              ? q.progressPct
-              : undefined,
-      };
-    }).filter((q) => !hidden.has(q.id));
+    const built = QUESTS.map((q) => applyQuestOverrideMerge(q, questOverrides[q.id])).filter((q) => !hidden.has(q.id));
     const custom = customQuests.map(customStoredToQuest);
     return [...built, ...custom];
   }, [questOverrides, customQuests, hiddenQuestIds]);
+
+  const emergencyQuestsMerged = useMemo(
+    () => EMERGENCY_QUESTS.map((q) => applyQuestOverrideMerge(q, questOverrides[q.id])),
+    [questOverrides],
+  );
+
+  const aiQuestsMerged = useMemo(
+    () => aiQuests.map((q) => applyQuestOverrideMerge(q, questOverrides[q.id])),
+    [aiQuests, questOverrides],
+  );
+
+  const dailyRandomHiddenMerged = useMemo(
+    () =>
+      dailyRandomHiddenQuest
+        ? applyQuestOverrideMerge(dailyRandomHiddenQuest, questOverrides[dailyRandomHiddenQuest.id])
+        : null,
+    [dailyRandomHiddenQuest, questOverrides],
+  );
+
+  const weeklyBossMerged = useMemo(
+    () => (weeklyBoss ? applyQuestOverrideMerge(weeklyBoss, questOverrides[weeklyBoss.id]) : null),
+    [weeklyBoss, questOverrides],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1949,6 +2117,15 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      localStorage.setItem(HIDDEN_BUILTIN_DEBUFF_IDS_KEY, JSON.stringify(hiddenBuiltinDebuffIds));
+    } catch {
+      /* */
+    }
+  }, [hiddenBuiltinDebuffIds]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
       localStorage.setItem(
         TASK_SECTIONS_PREFS_KEY,
         JSON.stringify({ order: sectionOrder, collapsed: sectionCollapsed }),
@@ -1958,7 +2135,11 @@ export default function Home() {
     }
   }, [sectionOrder, sectionCollapsed]);
 
-  const allDebuffs: DebuffDef[] = useMemo(() => [...DEBUFFS, ...customDebuffs], [customDebuffs]);
+  const allDebuffs: DebuffDef[] = useMemo(() => {
+    const hiddenB = new Set(hiddenBuiltinDebuffIds);
+    const builtin = DEBUFFS.filter((b) => !hiddenB.has(b.id));
+    return [...builtin, ...customDebuffs];
+  }, [customDebuffs, hiddenBuiltinDebuffIds]);
 
   const openQuestSettings = useCallback((quest: Quest) => {
     setEditingQuestId(quest.id);
@@ -1966,9 +2147,18 @@ export default function Home() {
     setEditingMinutes(String(quest.minutes));
     setEditingExp(String(quest.exp));
     setEditingCompletionMode(quest.completionMode ?? (quest.type === "emergency" ? "instant" as const : "timer"));
-    setEditingProgress(
-      typeof quest.progressPct === "number" && Number.isFinite(quest.progressPct) ? String(quest.progressPct) : "",
-    );
+    const cur = quest.progressCurrent;
+    const tgt = quest.progressTarget;
+    if (typeof cur === "number" && Number.isFinite(cur) && typeof tgt === "number" && Number.isFinite(tgt) && tgt > 0) {
+      setEditingProgressNum(String(Math.max(0, Math.floor(cur))));
+      setEditingProgressDen(String(Math.max(1, Math.floor(tgt))));
+    } else if (typeof quest.progressPct === "number" && Number.isFinite(quest.progressPct)) {
+      setEditingProgressNum(String(Math.max(0, Math.min(100, Math.round(quest.progressPct)))));
+      setEditingProgressDen("100");
+    } else {
+      setEditingProgressNum("");
+      setEditingProgressDen("");
+    }
     setQuestSettingsOpen(true);
   }, []);
 
@@ -2245,9 +2435,9 @@ export default function Home() {
     const today = getToday();
     const todayGain =
       questsBase.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
-      + (dailyRandomHiddenQuest && completed.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0)
-      + aiQuests.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
-      + EMERGENCY_QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
+      + (dailyRandomHiddenMerged && completed.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0)
+      + aiQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
+      + emergencyQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
       + bossExpToday
       + allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
     const newTotal = Math.max(0, BASE_EXP + todayGain);
@@ -2284,7 +2474,7 @@ export default function Home() {
       sound.playSuccess();
       setTimeout(() => setShowArise(false), 3500);
     }
-  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenQuest, user, questsBase, skillBonus]);
+  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenMerged, user, questsBase, skillBonus, aiQuestsMerged, emergencyQuestsMerged]);
 
   // Periodic sync to Supabase when logged in (catches meta, history, boss, achievements, voice)
   useEffect(() => {
@@ -2329,9 +2519,9 @@ export default function Home() {
 
   const todayExp =
     questsBase.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
-    + (dailyRandomHiddenQuest && completed.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0)
-    + aiQuests.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
-    + EMERGENCY_QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
+    + (dailyRandomHiddenMerged && completed.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0)
+    + aiQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
+    + emergencyQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
     + bossExpToday
     + allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
   const currentExp = Math.max(0, BASE_EXP + todayExp);
@@ -2438,9 +2628,9 @@ export default function Home() {
     const nx =
       BASE_EXP +
       questsBase.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
-      (dailyRandomHiddenQuest && next.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0) +
-      aiQuests.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
-      EMERGENCY_QUESTS.filter((x) => next.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
+      (dailyRandomHiddenMerged && next.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0) +
+      aiQuestsMerged.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+      emergencyQuestsMerged.filter((x) => next.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
       bossExpToday +
       allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
     const newLv = levelFromTotalExp(nx);
@@ -2479,11 +2669,11 @@ export default function Home() {
     }
   }
 
-  function handleTimerComplete() {
-    if (!activeTimer) return;
-    const q = activeTimer;
+  function applyTimerCompletion(q: Quest) {
+    clearMissionTimerSession();
     restoreBgmVolume();
     setActiveTimer(null);
+    setTimerResume(null);
     setMeta({ lastActivityAt: new Date().toISOString() });
     setEmergencyActive(false);
 
@@ -2507,9 +2697,9 @@ export default function Home() {
         BASE_EXP +
         questsBase.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
         q.exp +
-        (dailyRandomHiddenQuest && completed.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0) +
-        aiQuests.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
-        EMERGENCY_QUESTS.filter((x) => completed.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
+        (dailyRandomHiddenMerged && completed.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0) +
+        aiQuestsMerged.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+        emergencyQuestsMerged.filter((x) => completed.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
         allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
       const newLv = levelFromTotalExp(nx);
       if (newLv > level)
@@ -2529,14 +2719,41 @@ export default function Home() {
     completeQuestNow(q);
   }
 
+  function handleTimerComplete() {
+    if (!activeTimer) return;
+    applyTimerCompletion(activeTimer);
+  }
+
+  const applyTimerCompletionRef = useRef(applyTimerCompletion);
+  applyTimerCompletionRef.current = applyTimerCompletion;
+
+  useEffect(() => {
+    if (!loaded) return;
+    const pending = readPendingExpire();
+    if (pending) {
+      clearPendingExpire();
+      applyTimerCompletionRef.current(missionStoredToQuest(pending.quest));
+      return;
+    }
+    const s = readMissionTimerSession();
+    if (!s) return;
+    if (s.endTimeMs <= Date.now()) {
+      clearMissionTimerSession();
+      applyTimerCompletionRef.current(missionStoredToQuest(s.quest));
+      return;
+    }
+    setActiveTimer(missionStoredToQuest(s.quest));
+    setTimerResume({ endTimeMs: s.endTimeMs, totalSecs: s.totalSecs });
+  }, [loaded]);
+
   function getAllQuests(): Quest[] {
     const hid = new Set(hiddenQuestIds);
     return [
       ...questsBase,
-      ...(dailyRandomHiddenQuest && !hid.has(dailyRandomHiddenQuest.id) ? [dailyRandomHiddenQuest] : []),
-      ...(weeklyBoss ? [weeklyBoss] : []),
-      ...(emergencyActive ? EMERGENCY_QUESTS.filter((q) => !hid.has(q.id)) : []),
-      ...aiQuests.filter((q) => !hid.has(q.id)),
+      ...(dailyRandomHiddenMerged && !hid.has(dailyRandomHiddenMerged.id) ? [dailyRandomHiddenMerged] : []),
+      ...(weeklyBossMerged ? [weeklyBossMerged] : []),
+      ...(emergencyActive ? emergencyQuestsMerged.filter((q) => !hid.has(q.id)) : []),
+      ...aiQuestsMerged.filter((q) => !hid.has(q.id)),
     ];
   }
   const completedTodayList = useMemo(() => {
@@ -2551,7 +2768,7 @@ export default function Home() {
     });
     if (bossExpToday > 0) list.push({ id: -1, label: "BOSS RAID", exp: bossExpToday, attr: "EXE" });
     return list;
-  }, [completed, bossExpToday, dailyRandomHiddenQuest, emergencyActive, aiQuests, weeklyBoss, skillBonus, hiddenQuestIds]);
+  }, [completed, bossExpToday, dailyRandomHiddenMerged, emergencyActive, aiQuestsMerged, weeklyBossMerged, skillBonus, hiddenQuestIds, emergencyQuestsMerged, questsBase]);
   function findQuest(id: number): Quest | undefined {
     return getAllQuests().find(q => q.id === id);
   }
@@ -2717,11 +2934,19 @@ export default function Home() {
         const theme = getTimerThemeColor(activeTimer, aiQuests.map(q => q.id));
         return (
           <MissionTimer quest={activeTimer} rankColor={theme.color} rankGlow={theme.glow}
-            onComplete={handleTimerComplete} onCancel={()=>{ sound.playCancel(); systemVoice.speak("MISSION CANCELED"); restoreBgmVolume(); setActiveTimer(null); }}
+            onComplete={handleTimerComplete} onCancel={()=>{ clearMissionTimerSession(); setTimerResume(null); sound.playCancel(); systemVoice.speak("MISSION CANCELED"); restoreBgmVolume(); setActiveTimer(null); }}
             skillBonusPct={activeTimer.type !== "boss" ? getSkillExpBonus(activeTimer, unlockedSkillIds) : 0}
             onPlayMissionStart={()=>{ sound.playMissionStart(); fadeOutBgm(); }} onPlayTimerInit={()=>{ sound.playTimerInit(); }}
             onPlayMinuteTick={sound.playMinuteTick} onPlayCountdownTick={sound.playCountdownTick} onPlayCancel={sound.playCancel} onPlayClick={sound.playClick}
-            onTimeExpired={()=> systemVoice.speak("MISSION TIME EXPIRED")} onTenSecondsRemaining={()=> systemVoice.speak("TEN SECONDS REMAINING")}/>
+            onTimeExpired={()=> systemVoice.speak("MISSION TIME EXPIRED")} onTenSecondsRemaining={()=> systemVoice.speak("TEN SECONDS REMAINING")}
+            resume={timerResume}
+            onResumeConsumed={() => setTimerResume(null)}
+            onBackgroundIELTS={() => {
+              setActiveTimer(null);
+              setTimerResume(null);
+              router.push("/ielts");
+            }}
+          />
         );
       })()}
 
@@ -3343,8 +3568,8 @@ export default function Home() {
                 const hidUi = new Set(hiddenQuestIds);
                 const supplementalDaily = [
                   ...questsBase.filter((q) => q.type === "hidden"),
-                  ...(dailyRandomHiddenQuest && !hidUi.has(dailyRandomHiddenQuest.id) ? [dailyRandomHiddenQuest] : []),
-                  ...aiQuests.filter((q) => !hidUi.has(q.id)),
+                  ...(dailyRandomHiddenMerged && !hidUi.has(dailyRandomHiddenMerged.id) ? [dailyRandomHiddenMerged] : []),
+                  ...aiQuestsMerged.filter((q) => !hidUi.has(q.id)),
                 ];
                 const seenDailyId = new Set<number>();
                 const dailySystemQuests = [
@@ -3375,7 +3600,8 @@ export default function Home() {
                         setAddTopMinutes("25");
                         setAddTopAttr("EXE");
                         setAddTopMode("instant");
-                        setAddTopProgress("");
+                        setAddTopProgressNum("");
+                        setAddTopProgressDen("");
                       }}
                       style={{
                         padding: "6px 10px",
@@ -3417,7 +3643,6 @@ export default function Home() {
                             idx={idx}
                             priority
                             primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
-                            progressPct={q.progressPct}
                           />
                         </div>
                       ))}
@@ -3549,7 +3774,6 @@ export default function Home() {
                                 isAi={aiQuests.some((a) => a.id === q.id)}
                                 idx={idx}
                                 primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
-                                progressPct={q.progressPct}
                               />
                             );
                           })}
@@ -3563,21 +3787,21 @@ export default function Home() {
                     if (sid === "boss") {
                       return wrap(
                         <>
-                          {!weeklyBoss && customBossQuests.length === 0 ? (
+                          {!weeklyBossMerged && customBossQuests.length === 0 ? (
                             <div style={{ color: "#6A8AAA", fontSize: "0.65rem", padding: "8px 4px" }}>本週尚未抽選 Raid 或尚無自訂 Boss 任務</div>
                           ) : null}
-                          {weeklyBoss ? (
+                          {weeklyBossMerged ? (
                             <div style={{ border: "2px solid rgba(231,76,60,0.5)", borderRadius: 12, padding: 2, marginBottom: 10, background: "rgba(231,76,60,0.06)", boxShadow: "0 0 20px rgba(231,76,60,0.15)" }}>
                               <QuestCard
-                                quest={weeklyBoss}
+                                quest={weeklyBossMerged}
                                 accentColor="#E74C3C"
                                 done={false}
-                                onStart={() => setActiveTimer(weeklyBoss)}
+                                onStart={() => setActiveTimer(weeklyBossMerged)}
                                 onUndo={() => {}}
+                                onSettings={() => openQuestSettings(weeklyBossMerged)}
                                 onHoverSound={sound.playHover}
                                 onClickSound={sound.playClick}
                                 primaryActionLabel="開始計時"
-                                progressPct={weeklyBoss.progressPct}
                               />
                             </div>
                           ) : null}
@@ -3595,7 +3819,6 @@ export default function Home() {
                               onClickSound={sound.playClick}
                               idx={idx}
                               primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
-                              progressPct={q.progressPct}
                             />
                           ))}
                         </>,
@@ -3625,11 +3848,10 @@ export default function Home() {
                               onClickSound={sound.playClick}
                               idx={idx}
                               primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
-                                progressPct={q.progressPct}
                             />
                           ))}
                           {emergencyActive
-                            ? EMERGENCY_QUESTS.filter((q) => !hiddenQuestIds.includes(q.id)).map((q, idx) => (
+                            ? emergencyQuestsMerged.filter((q) => !hiddenQuestIds.includes(q.id)).map((q, idx) => (
                                 <QuestCard
                                   key={q.id}
                                   quest={q}
@@ -3642,7 +3864,6 @@ export default function Home() {
                                   onClickSound={sound.playClick}
                                   idx={idx}
                                   primaryActionLabel="一鍵完成"
-                                  progressPct={q.progressPct}
                                 />
                               ))
                             : null}
@@ -3664,6 +3885,30 @@ export default function Home() {
                     <div style={{width:"3px",height:"14px",background:"#E74C3C",borderRadius:"2px",boxShadow:"0 0 8px #E74C3C"}}/>
                     <span style={{color:"#E74C3C",fontSize:"0.68rem",letterSpacing:"3px",fontWeight:700}}>DANGER ZONE</span>
                     <div style={{flex:1}} />
+                    {hiddenBuiltinDebuffIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sound.playClick();
+                          setHiddenBuiltinDebuffIds([]);
+                        }}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 8,
+                          border: "1px solid rgba(248,113,113,0.35)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#FCA5A5",
+                          fontSize: "0.55rem",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          letterSpacing: "0.08em",
+                          fontFamily: "inherit",
+                        }}
+                        title="重新顯示所有內建懲罰"
+                      >
+                        還原預設懲罰
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
@@ -3689,43 +3934,125 @@ export default function Home() {
                     </button>
                   </div>
                   <div style={{color:"#7A4A4A",fontSize:"0.55rem",letterSpacing:"1px",marginBottom:"10px"}}>
-                    負面行為 · 點擊即立即啟動（當日不可取消）· 翌日 00:00 自動重置
+                    負面行為 · 預設／自訂皆可從清單移除（預設可點「還原預設懲罰」）· 自訂為永久刪除 · 點擊列即啟動（當日不可取消）· 翌日 00:00 自動重置
                   </div>
                   {allDebuffs.map(d => {
                     const isActive = debuffs.includes(d.id);
+                    const isCustomDebuff = d.id >= CUSTOM_DEBUFF_MIN_ID;
+                    const isPresetBuiltin = DEBUFFS.some((b) => b.id === d.id);
                     const debuffBorder = isActive ? "rgba(231,76,60,0.25)" : "rgba(255,255,255,0.05)";
                     const debuffBorder2 = isActive ? "#E74C3C" : "#2A4A6A";
                     return (
-                      <div key={d.id} className="task-row"
-                        onClick={()=>{
+                      <div
+                        key={d.id}
+                        className="task-row"
+                        onClick={() => {
                           if (isActive) return;
                           sound.playClick();
                           sound.playAlert();
                           setDebuffs([...debuffs, d.id]);
                         }}
                         style={{
-                          display:"flex",alignItems:"center",gap:"12px",
-                          padding:"12px 14px",marginBottom:"4px",
-                          background:isActive?"rgba(231,76,60,0.08)":"rgba(255,255,255,0.02)",
-                          border:"1px solid " + debuffBorder,
-                          transition:"all 0.25s ease",
-                          cursor:isActive?"default":"pointer",
-                          opacity:isActive?0.9:1,
-                        }}>
-                        <div style={{width:"16px",height:"16px",borderRadius:"3px",flexShrink:0,
-                          border:"1px solid " + debuffBorder2,
-                          background:isActive?"rgba(231,76,60,0.2)":"transparent",
-                          display:"flex",alignItems:"center",justifyContent:"center",
-                          boxShadow:isActive?"0 0 8px rgba(231,76,60,0.4)":"none"}}>
-                          {isActive && <span style={{color:"#E74C3C",fontSize:"11px",fontWeight:"700"}}>✓</span>}
+                          display: "grid",
+                          gridTemplateColumns: "24px minmax(0, 1fr) minmax(56px, max-content) 44px",
+                          alignItems: "center",
+                          columnGap: "12px",
+                          padding: "12px 14px",
+                          marginBottom: "4px",
+                          background: isActive ? "rgba(231,76,60,0.08)" : "rgba(255,255,255,0.02)",
+                          border: "1px solid " + debuffBorder,
+                          transition: "all 0.25s ease",
+                          cursor: isActive ? "default" : "pointer",
+                          opacity: isActive ? 0.9 : 1,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 24,
+                            height: 24,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            justifySelf: "center",
+                          }}
+                          aria-hidden
+                        >
+                          <div
+                            style={{
+                              width: 16,
+                              height: 16,
+                              borderRadius: 3,
+                              flexShrink: 0,
+                              border: "1px solid " + debuffBorder2,
+                              background: isActive ? "rgba(231,76,60,0.2)" : "transparent",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              boxShadow: isActive ? "0 0 8px rgba(231,76,60,0.4)" : "none",
+                            }}
+                          >
+                            {isActive && (
+                              <span style={{ color: "#E74C3C", fontSize: "11px", fontWeight: "700" }}>✓</span>
+                            )}
+                          </div>
                         </div>
-                        <span style={{flex:1,color:"#C8DCF0",fontSize:"0.85rem",fontWeight:500,minWidth:0}}>{d.label}</span>
-                        {isActive ? (
-                          <span style={{color:"#8B6A6A",fontSize:"0.6rem",letterSpacing:"1px",marginRight:"8px"}}>已套用 · 翌日 00:00 重置</span>
-                        ) : null}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: "#C8DCF0", fontSize: "0.85rem", fontWeight: 500 }}>{d.label}</div>
+                          {isActive ? (
+                            <div style={{ marginTop: 4, color: "#8B6A6A", fontSize: "0.58rem", letterSpacing: "0.06em" }}>
+                              已套用 · 翌日 00:00 重置
+                            </div>
+                          ) : null}
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+                          {isPresetBuiltin || isCustomDebuff ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                sound.playClick();
+                                if (isCustomDebuff) {
+                                  setCustomDebuffs((prev) => prev.filter((x) => x.id !== d.id));
+                                } else {
+                                  setHiddenBuiltinDebuffIds((prev) =>
+                                    prev.includes(d.id) ? prev : [...prev, d.id],
+                                  );
+                                }
+                                setDebuffs((prev) => prev.filter((x) => x !== d.id));
+                              }}
+                              style={{
+                                minWidth: 52,
+                                boxSizing: "border-box",
+                                background: "rgba(231,76,60,0.12)",
+                                border: "1px solid rgba(231,76,60,0.35)",
+                                borderRadius: "6px",
+                                padding: "6px 10px",
+                                color: "#F87171",
+                                fontSize: "0.62rem",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                              aria-label={isCustomDebuff ? "刪除自訂懲罰" : "從清單移除內建懲罰（可還原）"}
+                              title={
+                                isCustomDebuff
+                                  ? "永久刪除此自訂懲罰"
+                                  : "從清單隱藏；點標題列「還原預設懲罰」可再次顯示"
+                              }
+                            >
+                              {isCustomDebuff ? "刪除" : "移除"}
+                            </button>
+                          ) : null}
+                        </div>
                         <span
                           className={`font-mono-num ${isActive ? "debuff-penalty-active" : ""}`}
-                          style={{color:"#E74C3C",fontSize:"0.7rem",fontWeight:600}}
+                          style={{
+                            color: "#E74C3C",
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                            justifySelf: "end",
+                            textAlign: "right",
+                          }}
                           title={`原因：${d.label} (${d.exp} EXP)`}
                         >
                           {d.exp}
@@ -3858,39 +4185,42 @@ export default function Home() {
                       </label>
                     </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                      <label style={{ display: "grid", gap: "6px" }}>
-                        <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>
-                          完成方式
-                        </span>
-                        <select
-                          value={editingCompletionMode}
-                          onChange={(e) => setEditingCompletionMode(e.target.value as QuestCompletionMode)}
-                          style={{
-                            width: "100%",
-                            padding: "10px 12px",
-                            borderRadius: "10px",
-                            border: "1px solid rgba(56,189,248,0.25)",
-                            background: "rgba(0,0,0,0.25)",
-                            color: "#E0F2FE",
-                            outline: "none",
-                          }}
-                        >
-                          <option value="timer">計時（開啟任務倒數）</option>
-                          <option value="instant">一鍵完成（按下立即結算 EXP）</option>
-                        </select>
-                      </label>
-                      <label style={{ display: "grid", gap: "6px" }}>
-                        <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>
-                          今日進度 (%)
-                        </span>
+                    <label style={{ display: "grid", gap: "6px", marginTop: "2px" }}>
+                      <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>
+                        完成方式
+                      </span>
+                      <select
+                        value={editingCompletionMode}
+                        onChange={(e) => setEditingCompletionMode(e.target.value as QuestCompletionMode)}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "10px",
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      >
+                        <option value="timer">計時（開啟任務倒數）</option>
+                        <option value="instant">一鍵完成（按下立即結算 EXP）</option>
+                      </select>
+                    </label>
+                    <label style={{ display: "grid", gap: "8px", marginTop: "10px" }}>
+                      <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>
+                        今日進度（目前／目標）
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                         <input
                           inputMode="numeric"
-                          value={editingProgress}
-                          onChange={(e) => setEditingProgress(e.target.value)}
-                          placeholder="例如 40（代表 40%）"
+                          value={editingProgressNum}
+                          onChange={(e) => setEditingProgressNum(e.target.value)}
+                          placeholder="目前"
+                          aria-label="今日進度目前值"
                           style={{
-                            width: "100%",
+                            flex: "1 1 88px",
+                            minWidth: "72px",
+                            maxWidth: "160px",
                             padding: "10px 12px",
                             borderRadius: "10px",
                             border: "1px solid rgba(56,189,248,0.25)",
@@ -3899,8 +4229,30 @@ export default function Home() {
                             outline: "none",
                           }}
                         />
-                      </label>
-                    </div>
+                        <span style={{ color: "#94A3B8", fontSize: "1rem", fontWeight: 700, flexShrink: 0 }}>/</span>
+                        <input
+                          inputMode="numeric"
+                          value={editingProgressDen}
+                          onChange={(e) => setEditingProgressDen(e.target.value)}
+                          placeholder="目標"
+                          aria-label="今日進度目標值"
+                          style={{
+                            flex: "1 1 88px",
+                            minWidth: "72px",
+                            maxWidth: "160px",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: "0.52rem", color: "#64748B", lineHeight: 1.4 }}>
+                        卡片上會顯示如 30/2000。兩欄皆留空則不顯示進度。
+                      </span>
+                    </label>
                   </div>
 
                   <p style={{ margin: "12px 0 0", fontSize: "0.58rem", color: "#64748B", lineHeight: 1.45 }}>
@@ -3914,7 +4266,9 @@ export default function Home() {
                       onClick={() => {
                         if (editingQuestId == null) return;
                         sound.playClick();
-                        if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
+                        if (editingQuestId >= TOP_CUSTOM_QUEST_MIN_ID) {
+                          setTopCustomQuests((prev) => prev.filter((c) => c.id !== editingQuestId));
+                        } else if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
                           setCustomQuests((prev) => prev.filter((c) => c.id !== editingQuestId));
                         } else {
                           setHiddenQuestIds((prev) => {
@@ -3981,35 +4335,77 @@ export default function Home() {
                         sound.playClick();
                         const mins = Math.max(1, Math.min(240, Number.parseInt(editingMinutes, 10) || 0));
                         const exp = Math.max(0, Math.min(MAX_QUEST_EXP, Number.parseInt(editingExp, 10) || 0));
-                        const pctRaw = Number.parseInt(editingProgress, 10);
-                        const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, pctRaw)) : undefined;
-                        if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
-                          setCustomQuests((prev) =>
+                        const pr = parseProgressPair(editingProgressNum, editingProgressDen);
+                        if (!pr.ok) {
+                          window.alert(pr.message);
+                          return;
+                        }
+                        const applyProgressToStored = <T extends CustomQuestStored | TopQuestStored>(c: T): T => {
+                          if (pr.clear) {
+                            return {
+                              ...c,
+                              progressPct: undefined,
+                              progressCurrent: undefined,
+                              progressTarget: undefined,
+                            };
+                          }
+                          return {
+                            ...c,
+                            progressCurrent: pr.current,
+                            progressTarget: pr.target,
+                            progressPct: undefined,
+                          };
+                        };
+                        if (editingQuestId >= TOP_CUSTOM_QUEST_MIN_ID) {
+                          setTopCustomQuests((prev) =>
                             prev.map((c) =>
                               c.id === editingQuestId
-                                ? {
+                                ? applyProgressToStored({
                                     ...c,
                                     label: editingLabel.trim() || c.label,
                                     minutes: Number.isFinite(mins) ? mins : c.minutes,
                                     exp: Number.isFinite(exp) ? exp : c.exp,
-                                    progressPct: pct !== undefined ? pct : c.progressPct,
-                                  }
+                                    mode: editingCompletionMode,
+                                  })
                                 : c,
                             ),
                           );
                           setQuestSettingsOpen(false);
                           return;
                         }
-                        const next = {
-                          ...questOverrides,
-                          [editingQuestId]: {
-                            label: editingLabel.trim() || undefined,
-                            minutes: Number.isFinite(mins) ? mins : undefined,
-                            exp: Number.isFinite(exp) ? exp : undefined,
-                            completionMode: editingCompletionMode,
-                            progressPct: pct,
-                          },
+                        if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
+                          setCustomQuests((prev) =>
+                            prev.map((c) =>
+                              c.id === editingQuestId
+                                ? applyProgressToStored({
+                                    ...c,
+                                    label: editingLabel.trim() || c.label,
+                                    minutes: Number.isFinite(mins) ? mins : c.minutes,
+                                    exp: Number.isFinite(exp) ? exp : c.exp,
+                                    mode: editingCompletionMode,
+                                  })
+                                : c,
+                            ),
+                          );
+                          setQuestSettingsOpen(false);
+                          return;
+                        }
+                        const slice: QuestOverrideSlice = {
+                          label: editingLabel.trim() || undefined,
+                          minutes: Number.isFinite(mins) ? mins : undefined,
+                          exp: Number.isFinite(exp) ? exp : undefined,
+                          completionMode: editingCompletionMode,
                         };
+                        if (pr.clear) {
+                          slice.progressPct = undefined;
+                          slice.progressCurrent = undefined;
+                          slice.progressTarget = undefined;
+                        } else {
+                          slice.progressCurrent = pr.current;
+                          slice.progressTarget = pr.target;
+                          slice.progressPct = undefined;
+                        }
+                        const next = { ...questOverrides, [editingQuestId]: slice };
                         saveQuestOverrides(next);
                         setQuestSettingsOpen(false);
                       }}
@@ -4417,26 +4813,49 @@ export default function Home() {
                       </select>
                     </label>
 
-                    <label style={{ display: "grid", gap: 6, marginTop: 12, minWidth: 0 }}>
-                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>今日進度 (%)（可留空）</span>
-                      <input
-                        inputMode="numeric"
-                        value={addTopProgress}
-                        onChange={(e) => setAddTopProgress(e.target.value)}
-                        placeholder="0–100"
-                        style={{
-                          width: "100%",
-                          maxWidth: "100%",
-                          minWidth: 0,
-                          boxSizing: "border-box",
-                          padding: "10px 12px",
-                          borderRadius: 10,
-                          border: "1px solid rgba(56,189,248,0.25)",
-                          background: "rgba(0,0,0,0.25)",
-                          color: "#E0F2FE",
-                          outline: "none",
-                        }}
-                      />
+                    <label style={{ display: "grid", gap: 8, marginTop: 12, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>今日進度（目前／目標，可留空）</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <input
+                          inputMode="numeric"
+                          value={addTopProgressNum}
+                          onChange={(e) => setAddTopProgressNum(e.target.value)}
+                          placeholder="目前"
+                          aria-label="Top 任務今日進度目前值"
+                          style={{
+                            flex: "1 1 80px",
+                            minWidth: "64px",
+                            maxWidth: "140px",
+                            boxSizing: "border-box",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                        <span style={{ color: "#94A3B8", fontWeight: 700 }}>/</span>
+                        <input
+                          inputMode="numeric"
+                          value={addTopProgressDen}
+                          onChange={(e) => setAddTopProgressDen(e.target.value)}
+                          placeholder="目標"
+                          aria-label="Top 任務今日進度目標值"
+                          style={{
+                            flex: "1 1 80px",
+                            minWidth: "64px",
+                            maxWidth: "140px",
+                            boxSizing: "border-box",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </div>
                     </label>
 
                     <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
@@ -4466,15 +4885,29 @@ export default function Home() {
                           }
                           const exp = Math.max(0, Math.min(MAX_QUEST_EXP, Number.parseInt(addTopExp, 10) || 0));
                           const minutes = Math.max(1, Math.min(240, Number.parseInt(addTopMinutes, 10) || 25));
-                          const pctRaw = Number.parseInt(addTopProgress, 10);
-                          const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, pctRaw)) : undefined;
+                          const pr = parseProgressPair(addTopProgressNum, addTopProgressDen);
+                          if (!pr.ok) {
+                            window.alert(pr.message);
+                            return;
+                          }
                           const nextId =
                             topCustomQuests.length === 0
                               ? TOP_CUSTOM_QUEST_MIN_ID + 1
                               : Math.max(...topCustomQuests.map((c) => c.id), TOP_CUSTOM_QUEST_MIN_ID) + 1;
+                          const progressFields = pr.clear
+                            ? {}
+                            : { progressCurrent: pr.current, progressTarget: pr.target };
                           setTopCustomQuests((prev) => [
                             ...prev,
-                            { id: nextId, label, exp, minutes, attr: addTopAttr, mode: addTopMode, progressPct: pct },
+                            {
+                              id: nextId,
+                              label,
+                              exp,
+                              minutes,
+                              attr: addTopAttr,
+                              mode: addTopMode,
+                              ...progressFields,
+                            },
                           ]);
                           setAddTopOpen(false);
                         }}
@@ -4614,7 +5047,9 @@ export default function Home() {
                           const exp = Number.isFinite(expRaw) ? expRaw : -10;
                           const safeExp = exp >= 0 ? -Math.max(1, exp) : exp;
                           const nextId =
-                            customDebuffs.length === 0 ? 50_000 : Math.max(...customDebuffs.map((d) => d.id), 50_000) + 1;
+                            customDebuffs.length === 0
+                              ? CUSTOM_DEBUFF_MIN_ID
+                              : Math.max(...customDebuffs.map((d) => d.id), CUSTOM_DEBUFF_MIN_ID) + 1;
                           setCustomDebuffs((prev) => [...prev, { id: nextId, label, exp: safeExp }]);
                           setAddDebuffOpen(false);
                         }}
