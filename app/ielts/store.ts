@@ -685,6 +685,9 @@ export function useIELTSStore() {
 
   const importAll = useCallback((json: unknown) => {
     if (!json || typeof json !== "object") throw new Error("Invalid JSON");
+    const raw = json as Record<string, unknown>;
+    /** 僅把 `flashcards` 接到現有字卡最前（與新增字卡順序一致），不覆寫其他備份欄位 */
+    const mergeFlashcards = raw.mergeFlashcards === true;
     const obj = json as Partial<{
       settings: Settings;
       scheduleOverride: Overrides;
@@ -707,7 +710,13 @@ export function useIELTSStore() {
     if (obj.mockScores) setScores(obj.mockScores);
     if (obj.wrongItems) setWrongItems(obj.wrongItems);
     if (obj.pomodoroSession) setPomo(obj.pomodoroSession);
-    if (obj.flashcards) setFlashcards(obj.flashcards);
+    if (obj.flashcards && Array.isArray(obj.flashcards)) {
+      if (mergeFlashcards) {
+        setFlashcards((prev) => [...obj.flashcards!, ...prev]);
+      } else {
+        setFlashcards(obj.flashcards);
+      }
+    }
     if (obj.swRecords) setSwRecords(obj.swRecords);
   }, []);
 

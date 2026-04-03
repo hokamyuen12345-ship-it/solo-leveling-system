@@ -2192,9 +2192,13 @@ function SettingsTab({
 
   const doImport = () => {
     try {
-      const json = JSON.parse(importText);
+      const json = JSON.parse(importText) as { mergeFlashcards?: boolean };
       store.importAll(json);
-      setMsg("已匯入備份。");
+      setMsg(
+        json && typeof json === "object" && json.mergeFlashcards === true
+          ? "已合併字卡到現有清單（其他資料未變更）。"
+          : "已匯入備份。",
+      );
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "匯入失敗。");
     }
@@ -2290,7 +2294,7 @@ function SettingsTab({
           style={{ marginTop: 12, minHeight: 100, fontFamily: "monospace", fontSize: 12 }}
           value={importText}
           onChange={(e) => setImportText(e.target.value)}
-          placeholder="貼上備份 JSON…"
+          placeholder="貼上備份 JSON…（若 JSON 含 mergeFlashcards: true 與 flashcards，只會把字卡接到現有清單前，其餘不變）"
         />
         <button type="button" className="ielts-btn" style={{ ...outlineBtn(), width: "100%", marginTop: 10 }} onClick={doImport}>
           匯入

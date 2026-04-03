@@ -1,0 +1,275 @@
+{
+  "mergeFlashcards": true,
+  "flashcards": [
+    {
+      "id": "fb484ebe-15e4-4d6b-b764-4348ae0cbc6a",
+      "word": "northeast",
+      "meaning": "東北方向",
+      "example": "I traveled to the northeast region to explore its natural landscapes.\n我前往東北地區探索當地的自然景觀。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "0fba8f9e-d806-4450-873d-2cdc4059a6ad",
+      "word": "quiet",
+      "meaning": "安靜的",
+      "example": "I prefer a quiet environment because it helps me focus better.\n我喜歡安靜的環境，因為它讓我更專注。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "4df1e478-d000-4036-a087-b26c223fadc2",
+      "word": "beach",
+      "meaning": "海灘",
+      "example": "The beach is a perfect place to relax and enjoy nature.\n海灘是放鬆和享受自然的好地方。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "ed5f9642-c5d2-4c58-8627-894f46cc7daa",
+      "word": "restaurant",
+      "meaning": "餐廳",
+      "example": "This restaurant offers a wide variety of international cuisine.\n這間餐廳提供多樣化的國際美食。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "5c61efeb-24d5-439b-a2f4-84c20d204fbc",
+      "word": "garden",
+      "meaning": "花園",
+      "example": "The garden is beautifully designed with different types of plants.\n這個花園設計優美，種植了各種植物。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "469906a7-4172-422b-ba5a-ca984e22aca7",
+      "word": "variety",
+      "meaning": "多樣性",
+      "example": "A variety of options allows customers to make better choices.\n多樣化的選擇讓顧客能作出更好的決定。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "15f525e0-7217-40a6-b694-f0759da3c078",
+      "word": "plane",
+      "meaning": "飛機",
+      "example": "Taking a plane is the fastest way to travel long distances.\n乘飛機是長途旅行最快的方法。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "e79742dc-1395-4537-9157-bc09e7e734d6",
+      "word": "tourism",
+      "meaning": "旅遊業",
+      "example": "Tourism plays an important role in the local economy.\n旅遊業在當地經濟中扮演重要角色。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "6c29b505-ff82-4f31-b0bf-b0530f0fc3eb",
+      "word": "training",
+      "meaning": "訓練",
+      "example": "Proper training is essential for improving professional skills.\n適當的訓練對提升專業技能非常重要。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "a9975aec-7499-4464-84b1-fb5bdec6614f",
+      "word": "roof",
+      "meaning": "屋頂",
+      "example": "The roof was damaged due to the heavy rain.\n屋頂因大雨而受損。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "9410a080-a67c-4360-85a3-e400bc4ecb7e",
+      "word": "lake",
+      "meaning": "湖",
+      "example": "The lake provides a peaceful and relaxing atmosphere.\n湖泊提供寧靜放鬆的環境。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "f9129113-2679-43d2-a28d-920eb91e340b",
+      "word": "picnic",
+      "meaning": "野餐",
+      "example": "We had a picnic in the park last weekend.\n上週末我們在公園野餐。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "0bd89fd6-757b-40ba-94ca-d7d622ea9f92",
+      "word": "blanket",
+      "meaning": "毯子",
+      "example": "She brought a blanket to keep warm during the picnic.\n她帶了一張毯子在野餐時保暖。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "bf4046f6-27a2-4168-a9d1-8c8891a47e88",
+      "word": "exhibition",
+      "meaning": "展覽",
+      "example": "The exhibition showcases modern art from different countries.\n這個展覽展示來自不同國家的現代藝術。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "bff6872f-6722-4b2b-9330-8593bd8a9769",
+      "word": "gallery",
+      "meaning": "畫廊",
+      "example": "The gallery displays works by talented young artists.\n畫廊展示了有才華的年輕藝術家的作品。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "62f72f77-f79c-426a-8e44-4f84c3814a53",
+      "word": "subway",
+      "meaning": "地鐵",
+      "example": "The subway system is convenient and efficient.\n地鐵系統方便又高效。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "ada8e1a0-c5f8-47c5-ad27-27a1417d586c",
+      "word": "lawyer",
+      "meaning": "律師",
+      "example": "A lawyer provides legal advice and represents clients.\n律師提供法律建議並代表客戶。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "2737ad4b-fd9a-45fe-b7a0-22267d290bc7",
+      "word": "relaxation",
+      "meaning": "放鬆",
+      "example": "Listening to music is a good way of relaxation.\n聽音樂是一種很好的放鬆方式。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "ff8c54c6-1819-4da7-ac83-86fe837acaaf",
+      "word": "vegetarian",
+      "meaning": "素食者／素食的",
+      "example": "Many people choose a vegetarian diet for health reasons.\n很多人因健康原因選擇素食。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "543f524f-e2be-46ed-b93c-4345f5c37d15",
+      "word": "forest",
+      "meaning": "森林",
+      "example": "The forest is home to many species of animals.\n森林是許多動物的棲息地。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "de5e4fde-e8c5-46e5-8487-fcb3b6554ad7",
+      "word": "population",
+      "meaning": "人口",
+      "example": "The population of the city has increased rapidly.\n這個城市的人口快速增長。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "5ee79c7c-f6e5-484c-9f1f-14bcd32562fe",
+      "word": "crops",
+      "meaning": "農作物",
+      "example": "Farmers grow crops to supply food to the market.\n農民種植農作物供應市場。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "d2e77284-5471-4db5-9622-0660cb8e6b13",
+      "word": "annual",
+      "meaning": "每年的",
+      "example": "The company holds an annual meeting to review performance.\n公司每年舉行會議檢討表現。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "0da785dc-b4cb-4756-81ce-6adba62d1d3d",
+      "word": "trade",
+      "meaning": "貿易",
+      "example": "International trade promotes economic development.\n國際貿易促進經濟發展。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "51a33565-3adc-4927-bb21-a5322d43a85a",
+      "word": "factory",
+      "meaning": "工廠",
+      "example": "The factory produces electronic products.\n這間工廠生產電子產品。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "8bd7b9e4-1357-442d-91e3-aadb5ca58826",
+      "word": "vocabulary",
+      "meaning": "詞彙",
+      "example": "Building vocabulary is important for improving English.\n建立詞彙量對提升英語很重要。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "1ecd2c0a-cfde-4d93-a656-79d5af9de423",
+      "word": "museum",
+      "meaning": "博物館",
+      "example": "The museum preserves historical artifacts.\n博物館保存歷史文物。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "7430b973-fc45-4e87-8f5f-b4e746ed91d2",
+      "word": "ancient",
+      "meaning": "古老的",
+      "example": "This temple is an ancient structure with a long history.\n這座寺廟是歷史悠久的古建築。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "3efe90f8-037e-47cb-9c11-f3272d63eaa3",
+      "word": "government",
+      "meaning": "政府",
+      "example": "The government is responsible for public policies.\n政府負責公共政策。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "83efaa39-f625-4313-9205-7d0406cd22c6",
+      "word": "equipment",
+      "meaning": "設備（不可數）⚠️",
+      "example": "Modern equipment improves efficiency in the workplace.\n現代設備提升工作效率。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    }
+  ]
+}
