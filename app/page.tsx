@@ -236,6 +236,8 @@ interface Quest {
   minutes: number;
   /** 自訂任務：計時或一鍵完成；內建任務未設時依 type 推斷 */
   completionMode?: QuestCompletionMode;
+  /** 進度百分比（0–100，由使用者在任務設定中手動填寫） */
+  progressPct?: number;
 }
 
 /** 自訂任務（存 localStorage） */
@@ -247,12 +249,28 @@ type CustomQuestStored = {
   minutes: number;
   attr: AttrKey;
   mode: QuestCompletionMode;
+  /** 進度百分比（0–100，由使用者在任務設定中手動填寫） */
+  progressPct?: number;
+};
+
+/** Top Priority 專屬任務（存 localStorage） */
+type TopQuestStored = {
+  id: number;
+  label: string;
+  exp: number;
+  minutes: number;
+  attr: AttrKey;
+  mode: QuestCompletionMode;
+  progressPct?: number;
 };
 
 const CUSTOM_QUEST_MIN_ID = 100_000;
 const CUSTOM_QUESTS_KEY = "slq_custom_quests_v1";
 const TASK_SECTIONS_PREFS_KEY = "slq_task_sections_v1";
 const HIDDEN_QUEST_IDS_KEY = "slq_hidden_quest_ids_v1";
+const TOP_CUSTOM_QUEST_MIN_ID = 200_000;
+const TOP_CUSTOM_QUESTS_KEY = "slq_top_custom_quests_v1";
+const CUSTOM_DEBUFFS_KEY = "slq_custom_debuffs_v1";
 
 const DEFAULT_SECTION_ORDER: TaskSectionId[] = ["daily", "boss", "emergency"];
 
@@ -290,6 +308,20 @@ function customStoredToQuest(c: CustomQuestStored): Quest {
     attr: c.attr,
     minutes: c.minutes,
     completionMode: c.mode,
+    progressPct: typeof c.progressPct === "number" ? c.progressPct : undefined,
+  };
+}
+
+function topStoredToQuest(c: TopQuestStored): Quest {
+  return {
+    id: c.id,
+    type: "challenge",
+    label: c.label,
+    exp: c.exp,
+    attr: c.attr,
+    minutes: c.minutes,
+    completionMode: c.mode,
+    progressPct: typeof c.progressPct === "number" ? c.progressPct : undefined,
   };
 }
 
@@ -784,6 +816,12 @@ const DEBUFFS = [
   { id: 12, label: "【影子拖延】延遲重要決策：該做的事推遲超過 3 小時", exp: -15 },
 ];
 
+type DebuffDef = { id: number; label: string; exp: number };
+
+function getDebuffExpById(id: number, all: DebuffDef[]): number {
+  return all.find((d) => d.id === id)?.exp ?? 0;
+}
+
 /* Quest type colors from Solo Leveling UI Design System */
 const QUEST_TYPE_COLOR: Record<QuestType, string> = {
   daily: "var(--quest-daily)",
@@ -1018,6 +1056,7 @@ function QuestCard({
   priority,
   primaryActionLabel,
   onDelete,
+  progressPct,
 }: {
   quest: Quest;
   accentColor: string;
@@ -1035,6 +1074,8 @@ function QuestCard({
   primaryActionLabel?: string;
   /** 自訂任務刪除 */
   onDelete?: () => void;
+  /** 今日進度百分比（0–100），供顯示用 */
+  progressPct?: number;
 }) {
   const stars = getQuestDifficulty(quest);
   const [hover, setHover] = useState(false);
@@ -1084,6 +1125,11 @@ function QuestCard({
             </span>
             <span className="font-mono-num" style={{ color: done ? "#3A5A4A" : "#2ECC71" }}>Reward: +{formatExpValue(quest.exp)} EXP</span>
           </div>
+          {typeof progressPct === "number" && Number.isFinite(progressPct) && (
+            <div style={{ marginTop: "4px", fontSize: "0.6rem", color: "#64748B" }}>
+              進度：<span className="font-mono-num">{Math.max(0, Math.min(100, Math.round(progressPct)))}%</span>
+            </div>
+          )}
           {hover && !done && (
             <div style={{ marginTop: "6px", fontSize: "0.5rem", color: "rgba(58,122,212,0.6)", letterSpacing: "1px", fontFamily: "var(--font-system)" }}>
               LOADING_REWARD_DATA...
@@ -1649,6 +1695,7 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
 export default function Home() {
   const [completed, setCompleted] = useState<number[]>([]);
   const [debuffs,   setDebuffs]   = useState<number[]>([]);
+  const [customDebuffs, setCustomDebuffs] = useState<DebuffDef[]>([]);
   const [totalExp,  setTotalExp]  = useState(BASE_EXP);
   const [streak,    setStreak]    = useState(0);
   const [tab, setTab]             = useState<"tasks"|"analytics">("tasks");
@@ -1712,8 +1759,11 @@ export default function Home() {
 
   // ===== 任務自訂設定（localStorage）=====
   const QUEST_OVERRIDES_KEY = "slq_quest_overrides_v1";
-  const [questOverrides, setQuestOverrides] = useState<Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>>>({});
+  const [questOverrides, setQuestOverrides] = useState<
+    Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct">>>
+  >({});
   const [customQuests, setCustomQuests] = useState<CustomQuestStored[]>([]);
+  const [topCustomQuests, setTopCustomQuests] = useState<TopQuestStored[]>([]);
   const [hiddenQuestIds, setHiddenQuestIds] = useState<number[]>([]);
   const [sectionOrder, setSectionOrder] = useState<TaskSectionId[]>(() => [...DEFAULT_SECTION_ORDER]);
   const [sectionCollapsed, setSectionCollapsed] = useState<Partial<Record<TaskSectionId, boolean>>>({});
@@ -1723,11 +1773,23 @@ export default function Home() {
   const [addQuestMinutes, setAddQuestMinutes] = useState("25");
   const [addQuestAttr, setAddQuestAttr] = useState<AttrKey>("EXE");
   const [addQuestMode, setAddQuestMode] = useState<QuestCompletionMode>("timer");
+  const [addTopOpen, setAddTopOpen] = useState(false);
+  const [addTopLabel, setAddTopLabel] = useState("");
+  const [addTopExp, setAddTopExp] = useState("25");
+  const [addTopMinutes, setAddTopMinutes] = useState("25");
+  const [addTopAttr, setAddTopAttr] = useState<AttrKey>("EXE");
+  const [addTopMode, setAddTopMode] = useState<QuestCompletionMode>("instant");
+  const [addTopProgress, setAddTopProgress] = useState("");
+  const [addDebuffOpen, setAddDebuffOpen] = useState(false);
+  const [addDebuffLabel, setAddDebuffLabel] = useState("");
+  const [addDebuffExp, setAddDebuffExp] = useState("-10");
   const [questSettingsOpen, setQuestSettingsOpen] = useState(false);
   const [editingQuestId, setEditingQuestId] = useState<number | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const [editingMinutes, setEditingMinutes] = useState("");
   const [editingExp, setEditingExp] = useState("");
+  const [editingCompletionMode, setEditingCompletionMode] = useState<QuestCompletionMode>("timer");
+  const [editingProgress, setEditingProgress] = useState("");
   const [settingsPortalReady, setSettingsPortalReady] = useState(false);
 
   useEffect(() => {
@@ -1765,15 +1827,21 @@ export default function Home() {
       const raw = localStorage.getItem(QUEST_OVERRIDES_KEY);
       if (!raw) setQuestOverrides({});
       else {
-        const parsed = JSON.parse(raw) as Record<string, { label?: string; minutes?: number; exp?: number }>;
-        const next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>> = {};
+        const parsed = JSON.parse(raw) as Record<
+          string,
+          { label?: string; minutes?: number; exp?: number; completionMode?: QuestCompletionMode; progressPct?: number }
+        >;
+        const next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct">>> =
+          {};
         Object.entries(parsed).forEach(([k, v]) => {
           const id = Number(k);
           if (!Number.isFinite(id)) return;
           next[id] = {};
-          if (typeof v.label === "string") next[id].label = v.label;
-          if (typeof v.minutes === "number") next[id].minutes = v.minutes;
-          if (typeof v.exp === "number") next[id].exp = v.exp;
+          if (typeof v.label === "string") next[id]!.label = v.label;
+          if (typeof v.minutes === "number") next[id]!.minutes = v.minutes;
+          if (typeof v.exp === "number") next[id]!.exp = v.exp;
+          if (v.completionMode === "timer" || v.completionMode === "instant") next[id]!.completionMode = v.completionMode;
+          if (typeof v.progressPct === "number") next[id]!.progressPct = v.progressPct;
         });
         setQuestOverrides(next);
       }
@@ -1786,10 +1854,23 @@ export default function Home() {
         const parsed = JSON.parse(c) as CustomQuestStored[];
         if (Array.isArray(parsed)) setCustomQuests(parsed.map(migrateCustomQuestStored));
       }
+      const tc = localStorage.getItem(TOP_CUSTOM_QUESTS_KEY);
+      if (tc) {
+        const parsed = JSON.parse(tc) as TopQuestStored[];
+        if (Array.isArray(parsed)) setTopCustomQuests(parsed.filter((x) => x && typeof x.id === "number"));
+      }
       const h = localStorage.getItem(HIDDEN_QUEST_IDS_KEY);
       if (h) {
         const parsed = JSON.parse(h) as unknown;
         if (Array.isArray(parsed)) setHiddenQuestIds(parsed.filter((x): x is number => typeof x === "number"));
+      }
+      const dz = localStorage.getItem(CUSTOM_DEBUFFS_KEY);
+      if (dz) {
+        const parsed = JSON.parse(dz) as DebuffDef[];
+        if (Array.isArray(parsed))
+          setCustomDebuffs(
+            parsed.filter((x) => x && typeof x.id === "number" && typeof x.label === "string" && typeof x.exp === "number"),
+          );
       }
       const s = localStorage.getItem(TASK_SECTIONS_PREFS_KEY);
       if (s) {
@@ -1802,14 +1883,17 @@ export default function Home() {
     }
   }, [syncStatus]);
 
-  const saveQuestOverrides = useCallback((next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp">>>) => {
+  const saveQuestOverrides = useCallback(
+    (next: Record<number, Partial<Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct">>>) => {
     setQuestOverrides(next);
     try {
       localStorage.setItem(QUEST_OVERRIDES_KEY, JSON.stringify(next));
     } catch {
       // ignore
     }
-  }, []);
+    },
+    [],
+  );
 
   const questsBase = useMemo(() => {
     const hidden = new Set(hiddenQuestIds);
@@ -1821,6 +1905,14 @@ export default function Home() {
         label: typeof o.label === "string" ? o.label : q.label,
         minutes: typeof o.minutes === "number" ? o.minutes : q.minutes,
         exp: typeof o.exp === "number" ? o.exp : q.exp,
+         completionMode:
+          o.completionMode === "timer" || o.completionMode === "instant" ? o.completionMode : q.completionMode,
+        progressPct:
+          typeof o.progressPct === "number"
+            ? o.progressPct
+            : typeof q.progressPct === "number"
+              ? q.progressPct
+              : undefined,
       };
     }).filter((q) => !hidden.has(q.id));
     const custom = customQuests.map(customStoredToQuest);
@@ -1839,6 +1931,24 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      localStorage.setItem(TOP_CUSTOM_QUESTS_KEY, JSON.stringify(topCustomQuests));
+    } catch {
+      /* */
+    }
+  }, [topCustomQuests]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(CUSTOM_DEBUFFS_KEY, JSON.stringify(customDebuffs));
+    } catch {
+      /* */
+    }
+  }, [customDebuffs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
       localStorage.setItem(
         TASK_SECTIONS_PREFS_KEY,
         JSON.stringify({ order: sectionOrder, collapsed: sectionCollapsed }),
@@ -1848,11 +1958,17 @@ export default function Home() {
     }
   }, [sectionOrder, sectionCollapsed]);
 
+  const allDebuffs: DebuffDef[] = useMemo(() => [...DEBUFFS, ...customDebuffs], [customDebuffs]);
+
   const openQuestSettings = useCallback((quest: Quest) => {
     setEditingQuestId(quest.id);
     setEditingLabel(quest.label);
     setEditingMinutes(String(quest.minutes));
     setEditingExp(String(quest.exp));
+    setEditingCompletionMode(quest.completionMode ?? (quest.type === "emergency" ? "instant" as const : "timer"));
+    setEditingProgress(
+      typeof quest.progressPct === "number" && Number.isFinite(quest.progressPct) ? String(quest.progressPct) : "",
+    );
     setQuestSettingsOpen(true);
   }, []);
 
@@ -2133,7 +2249,7 @@ export default function Home() {
       + aiQuests.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
       + EMERGENCY_QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
       + bossExpToday
-      + DEBUFFS.filter(d=>debuffs.includes(d.id)).reduce((s,d)=>s+d.exp,0);
+      + allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
     const newTotal = Math.max(0, BASE_EXP + todayGain);
     setTotalExp(newTotal);
     const newStreak = completed.length > 0 ? Math.max(streak, 1) : streak;
@@ -2217,7 +2333,7 @@ export default function Home() {
     + aiQuests.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
     + EMERGENCY_QUESTS.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
     + bossExpToday
-    + DEBUFFS.filter(d=>debuffs.includes(d.id)).reduce((s,d)=>s+d.exp,0);
+    + allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
   const currentExp = Math.max(0, BASE_EXP + todayExp);
   const { level, lvExp, nextExp, expPct } = expBarFromTotal(currentExp);
   const rank = getRank(level);
@@ -2326,7 +2442,7 @@ export default function Home() {
       aiQuests.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
       EMERGENCY_QUESTS.filter((x) => next.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
       bossExpToday +
-      DEBUFFS.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
+      allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
     const newLv = levelFromTotalExp(nx);
     if (newLv > level)
       setTimeout(() => {
@@ -2394,7 +2510,7 @@ export default function Home() {
         (dailyRandomHiddenQuest && completed.includes(dailyRandomHiddenQuest.id) ? dailyRandomHiddenQuest.exp : 0) +
         aiQuests.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
         EMERGENCY_QUESTS.filter((x) => completed.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
-        DEBUFFS.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
+        allDebuffs.filter((d) => debuffs.includes(d.id)).reduce((s, d) => s + d.exp, 0);
       const newLv = levelFromTotalExp(nx);
       if (newLv > level)
         setTimeout(() => {
@@ -3222,6 +3338,8 @@ export default function Home() {
 
             {tab==="tasks" && (() => {
                 const topPriorityQuests = [...questsBase.filter(q => q.type === "challenge")].sort((a, b) => b.exp - a.exp).slice(0, 3);
+                const topCustomAsQuests = [...topCustomQuests.map(topStoredToQuest)].sort((a, b) => b.exp - a.exp);
+                const topDisplay = [...topCustomAsQuests, ...topPriorityQuests];
                 const hidUi = new Set(hiddenQuestIds);
                 const supplementalDaily = [
                   ...questsBase.filter((q) => q.type === "hidden"),
@@ -3241,15 +3359,50 @@ export default function Home() {
                   .sort((a, b) => b.exp - a.exp);
                 return (
               <div style={{animation:"fadeUp 0.35s ease forwards"}}>
-                {/* TOP PRIORITY MISSIONS — max 3, largest cards, bright system blue */}
+                {/* TOP PRIORITY MISSIONS — custom list + system top 3 */}
                 <div style={{marginBottom:"24px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"8px"}}>
                     <div style={{width:"4px",height:"18px",background:"#38bdf8",borderRadius:"2px",boxShadow:"0 0 12px #38bdf8"}}/>
                     <span style={{color:"#38bdf8",fontSize:"0.72rem",letterSpacing:"4px",fontWeight:800}}>TOP PRIORITY MISSIONS</span>
+                    <div style={{flex:1}} />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.playClick();
+                        setAddTopOpen(true);
+                        setAddTopLabel("");
+                        setAddTopExp("25");
+                        setAddTopMinutes("25");
+                        setAddTopAttr("EXE");
+                        setAddTopMode("instant");
+                        setAddTopProgress("");
+                      }}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid rgba(56,189,248,0.55)",
+                        background: "rgba(56,189,248,0.12)",
+                        color: "#A5D4F7",
+                        fontSize: "0.58rem",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                        letterSpacing: "0.12em",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      ＋ 新增任務
+                    </button>
                   </div>
-                  <div style={{color:"#7dd3fc",fontSize:"0.55rem",letterSpacing:"1.5px",marginBottom:"12px",opacity:0.9}}>最高價值行動 · 今日首要專注</div>
+                  <div style={{color:"#7dd3fc",fontSize:"0.55rem",letterSpacing:"1.5px",marginBottom:"12px",opacity:0.9}}>
+                    Top 專屬清單（可新增）＋系統自動挑選（依 EXP 取前 3）
+                  </div>
                   <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-                    {topPriorityQuests.map((q, idx) => (
+                    {topDisplay.length === 0 ? (
+                      <div style={{ color: "#6A8AAA", fontSize: "0.65rem", padding: "8px 4px" }}>
+                        尚無 Top 任務 · 點右上「＋ 新增任務」加入
+                      </div>
+                    ) : null}
+                    {topDisplay.map((q, idx) => (
                         <div key={q.id} style={{border:"2px solid rgba(56,189,248,0.6)",borderRadius:"12px",padding:"3px",background:"rgba(56,189,248,0.08)",boxShadow:"0 0 20px rgba(56,189,248,0.2)"}}>
                           <QuestCard
                             quest={q}
@@ -3258,11 +3411,13 @@ export default function Home() {
                             onStart={()=>toggle(q.id)}
                             onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
                             onSettings={() => openQuestSettings(q)}
+                            onDelete={q.id >= TOP_CUSTOM_QUEST_MIN_ID ? () => setTopCustomQuests((prev) => prev.filter((c) => c.id !== q.id)) : undefined}
                             onHoverSound={sound.playHover}
                             onClickSound={sound.playClick}
                             idx={idx}
                             priority
                             primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                            progressPct={q.progressPct}
                           />
                         </div>
                       ))}
@@ -3394,6 +3549,7 @@ export default function Home() {
                                 isAi={aiQuests.some((a) => a.id === q.id)}
                                 idx={idx}
                                 primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                                progressPct={q.progressPct}
                               />
                             );
                           })}
@@ -3421,6 +3577,7 @@ export default function Home() {
                                 onHoverSound={sound.playHover}
                                 onClickSound={sound.playClick}
                                 primaryActionLabel="開始計時"
+                                progressPct={weeklyBoss.progressPct}
                               />
                             </div>
                           ) : null}
@@ -3438,6 +3595,7 @@ export default function Home() {
                               onClickSound={sound.playClick}
                               idx={idx}
                               primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                              progressPct={q.progressPct}
                             />
                           ))}
                         </>,
@@ -3467,6 +3625,7 @@ export default function Home() {
                               onClickSound={sound.playClick}
                               idx={idx}
                               primaryActionLabel={shouldUseInstantComplete(q) ? "一鍵完成" : undefined}
+                                progressPct={q.progressPct}
                             />
                           ))}
                           {emergencyActive
@@ -3483,6 +3642,7 @@ export default function Home() {
                                   onClickSound={sound.playClick}
                                   idx={idx}
                                   primaryActionLabel="一鍵完成"
+                                  progressPct={q.progressPct}
                                 />
                               ))
                             : null}
@@ -3503,9 +3663,35 @@ export default function Home() {
                     <span style={{fontSize:"1rem"}} aria-hidden>⚠</span>
                     <div style={{width:"3px",height:"14px",background:"#E74C3C",borderRadius:"2px",boxShadow:"0 0 8px #E74C3C"}}/>
                     <span style={{color:"#E74C3C",fontSize:"0.68rem",letterSpacing:"3px",fontWeight:700}}>DANGER ZONE</span>
+                    <div style={{flex:1}} />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sound.playClick();
+                        setAddDebuffOpen(true);
+                        setAddDebuffLabel("");
+                        setAddDebuffExp("-10");
+                      }}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border: "1px solid rgba(231,76,60,0.55)",
+                        background: "rgba(231,76,60,0.12)",
+                        color: "#FCA5A5",
+                        fontSize: "0.58rem",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        letterSpacing: "0.12em",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      ＋ 新增懲罰
+                    </button>
                   </div>
-                  <div style={{color:"#7A4A4A",fontSize:"0.55rem",letterSpacing:"1px",marginBottom:"10px"}}>負面行為 · 一經套用無法取消 · 翌日 00:00 重置</div>
-                  {DEBUFFS.map(d => {
+                  <div style={{color:"#7A4A4A",fontSize:"0.55rem",letterSpacing:"1px",marginBottom:"10px"}}>
+                    負面行為 · 點擊即立即啟動（當日不可取消）· 翌日 00:00 自動重置
+                  </div>
+                  {allDebuffs.map(d => {
                     const isActive = debuffs.includes(d.id);
                     const debuffBorder = isActive ? "rgba(231,76,60,0.25)" : "rgba(255,255,255,0.05)";
                     const debuffBorder2 = isActive ? "#E74C3C" : "#2A4A6A";
@@ -3537,7 +3723,13 @@ export default function Home() {
                         {isActive ? (
                           <span style={{color:"#8B6A6A",fontSize:"0.6rem",letterSpacing:"1px",marginRight:"8px"}}>已套用 · 翌日 00:00 重置</span>
                         ) : null}
-                        <span className={`font-mono-num ${isActive ? "debuff-penalty-active" : ""}`} style={{color:"#E74C3C",fontSize:"0.7rem",fontWeight:600}} title={`原因：${d.label} (${d.exp} EXP)`}>{d.exp}</span>
+                        <span
+                          className={`font-mono-num ${isActive ? "debuff-penalty-active" : ""}`}
+                          style={{color:"#E74C3C",fontSize:"0.7rem",fontWeight:600}}
+                          title={`原因：${d.label} (${d.exp} EXP)`}
+                        >
+                          {d.exp}
+                        </span>
                       </div>
                     );
                   })}
@@ -3665,6 +3857,50 @@ export default function Home() {
                         />
                       </label>
                     </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                      <label style={{ display: "grid", gap: "6px" }}>
+                        <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>
+                          完成方式
+                        </span>
+                        <select
+                          value={editingCompletionMode}
+                          onChange={(e) => setEditingCompletionMode(e.target.value as QuestCompletionMode)}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        >
+                          <option value="timer">計時（開啟任務倒數）</option>
+                          <option value="instant">一鍵完成（按下立即結算 EXP）</option>
+                        </select>
+                      </label>
+                      <label style={{ display: "grid", gap: "6px" }}>
+                        <span style={{ fontSize: "0.6rem", letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc" }}>
+                          今日進度 (%)
+                        </span>
+                        <input
+                          inputMode="numeric"
+                          value={editingProgress}
+                          onChange={(e) => setEditingProgress(e.target.value)}
+                          placeholder="例如 40（代表 40%）"
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
 
                   <p style={{ margin: "12px 0 0", fontSize: "0.58rem", color: "#64748B", lineHeight: 1.45 }}>
@@ -3745,6 +3981,8 @@ export default function Home() {
                         sound.playClick();
                         const mins = Math.max(1, Math.min(240, Number.parseInt(editingMinutes, 10) || 0));
                         const exp = Math.max(0, Math.min(MAX_QUEST_EXP, Number.parseInt(editingExp, 10) || 0));
+                        const pctRaw = Number.parseInt(editingProgress, 10);
+                        const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, pctRaw)) : undefined;
                         if (editingQuestId >= CUSTOM_QUEST_MIN_ID) {
                           setCustomQuests((prev) =>
                             prev.map((c) =>
@@ -3754,6 +3992,7 @@ export default function Home() {
                                     label: editingLabel.trim() || c.label,
                                     minutes: Number.isFinite(mins) ? mins : c.minutes,
                                     exp: Number.isFinite(exp) ? exp : c.exp,
+                                    progressPct: pct !== undefined ? pct : c.progressPct,
                                   }
                                 : c,
                             ),
@@ -3767,6 +4006,8 @@ export default function Home() {
                             label: editingLabel.trim() || undefined,
                             minutes: Number.isFinite(mins) ? mins : undefined,
                             exp: Number.isFinite(exp) ? exp : undefined,
+                            completionMode: editingCompletionMode,
+                            progressPct: pct,
                           },
                         };
                         saveQuestOverrides(next);
@@ -4010,6 +4251,384 @@ export default function Home() {
                         }}
                       >
                         加入任務
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body,
+              )}
+
+            {addTopOpen && typeof document !== "undefined" &&
+              createPortal(
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="sl-add-top-title"
+                  onClick={() => setAddTopOpen(false)}
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 10000,
+                    background: "rgba(0,0,0,0.55)",
+                    backdropFilter: "blur(10px)",
+                    WebkitBackdropFilter: "blur(10px)",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "center",
+                    padding:
+                      "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
+                    overflowY: "auto",
+                  }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: "min(520px, calc(100vw - 24px))",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      marginTop: "clamp(8px, 4vh, 40px)",
+                      marginBottom: 24,
+                      borderRadius: 14,
+                      border: "1px solid rgba(56,189,248,0.35)",
+                      background: "rgba(15,23,42,0.96)",
+                      padding: 18,
+                      color: "#E0F2FE",
+                      fontFamily: "var(--font-ui)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <div id="sl-add-top-title" style={{ fontSize: "0.72rem", letterSpacing: "0.2em", color: "#7dd3fc", fontWeight: 800 }}>
+                      新增 Top Priority 任務
+                    </div>
+                    <div style={{ color: "#7A9ABB", fontSize: "0.56rem", marginTop: 8, lineHeight: 1.4 }}>
+                      這些任務只會出現在 Top Priority 區塊。
+                    </div>
+
+                    <label style={{ display: "grid", gap: 6, marginTop: 14, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", letterSpacing: "0.15em", color: "#94A3B8" }}>標題</span>
+                      <input
+                        value={addTopLabel}
+                        onChange={(e) => setAddTopLabel(e.target.value)}
+                        placeholder="任務描述"
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      />
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10, marginTop: 12, minWidth: 0 }}>
+                      <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                        <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>EXP</span>
+                        <input
+                          inputMode="numeric"
+                          value={addTopExp}
+                          onChange={(e) => setAddTopExp(e.target.value)}
+                          style={{
+                            width: "100%",
+                            maxWidth: "100%",
+                            minWidth: 0,
+                            boxSizing: "border-box",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </label>
+                      <label style={{ display: "grid", gap: 6, minWidth: 0 }}>
+                        <span style={{ fontSize: "0.58rem", color: "#94A3B8", lineHeight: 1.3 }}>計時（分鐘）</span>
+                        <input
+                          inputMode="numeric"
+                          value={addTopMinutes}
+                          onChange={(e) => setAddTopMinutes(e.target.value)}
+                          style={{
+                            width: "100%",
+                            maxWidth: "100%",
+                            minWidth: 0,
+                            boxSizing: "border-box",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: "1px solid rgba(56,189,248,0.25)",
+                            background: "rgba(0,0,0,0.25)",
+                            color: "#E0F2FE",
+                            outline: "none",
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <label style={{ display: "grid", gap: 6, marginTop: 12, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>屬性</span>
+                      <select
+                        value={addTopAttr}
+                        onChange={(e) => setAddTopAttr(e.target.value as AttrKey)}
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      >
+                        {(["PHY", "INT", "EXE", "RES", "SOC"] as const).map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6, marginTop: 12, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>完成方式</span>
+                      <select
+                        value={addTopMode}
+                        onChange={(e) => setAddTopMode(e.target.value as QuestCompletionMode)}
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      >
+                        <option value="timer">計時（開啟任務倒數）</option>
+                        <option value="instant">一鍵完成</option>
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6, marginTop: 12, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>今日進度 (%)（可留空）</span>
+                      <input
+                        inputMode="numeric"
+                        value={addTopProgress}
+                        onChange={(e) => setAddTopProgress(e.target.value)}
+                        placeholder="0–100"
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.25)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      />
+                    </label>
+
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setAddTopOpen(false)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          background: "transparent",
+                          color: "#94A3B8",
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sound.playClick();
+                          const label = addTopLabel.trim();
+                          if (!label) {
+                            window.alert("請輸入標題");
+                            return;
+                          }
+                          const exp = Math.max(0, Math.min(MAX_QUEST_EXP, Number.parseInt(addTopExp, 10) || 0));
+                          const minutes = Math.max(1, Math.min(240, Number.parseInt(addTopMinutes, 10) || 25));
+                          const pctRaw = Number.parseInt(addTopProgress, 10);
+                          const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, pctRaw)) : undefined;
+                          const nextId =
+                            topCustomQuests.length === 0
+                              ? TOP_CUSTOM_QUEST_MIN_ID + 1
+                              : Math.max(...topCustomQuests.map((c) => c.id), TOP_CUSTOM_QUEST_MIN_ID) + 1;
+                          setTopCustomQuests((prev) => [
+                            ...prev,
+                            { id: nextId, label, exp, minutes, attr: addTopAttr, mode: addTopMode, progressPct: pct },
+                          ]);
+                          setAddTopOpen(false);
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(56,189,248,0.7)",
+                          background: "rgba(56,189,248,0.2)",
+                          color: "#E0F2FE",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                        }}
+                      >
+                        加入任務
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body,
+              )}
+
+            {addDebuffOpen && typeof document !== "undefined" &&
+              createPortal(
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="sl-add-debuff-title"
+                  onClick={() => setAddDebuffOpen(false)}
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 10000,
+                    background: "rgba(0,0,0,0.55)",
+                    backdropFilter: "blur(10px)",
+                    WebkitBackdropFilter: "blur(10px)",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "center",
+                    padding:
+                      "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
+                    overflowY: "auto",
+                  }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: "min(520px, calc(100vw - 24px))",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      marginTop: "clamp(8px, 4vh, 40px)",
+                      marginBottom: 24,
+                      borderRadius: 14,
+                      border: "1px solid rgba(231,76,60,0.45)",
+                      background: "rgba(15,23,42,0.96)",
+                      padding: 18,
+                      color: "#E0F2FE",
+                      fontFamily: "var(--font-ui)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <div id="sl-add-debuff-title" style={{ fontSize: "0.72rem", letterSpacing: "0.2em", color: "#FCA5A5", fontWeight: 800 }}>
+                      新增 Danger Zone 懲罰
+                    </div>
+                    <div style={{ color: "#7A4A4A", fontSize: "0.56rem", marginTop: 8, lineHeight: 1.4 }}>
+                      新增後可在 Danger Zone 一按啟動（當日不可取消）。
+                    </div>
+
+                    <label style={{ display: "grid", gap: 6, marginTop: 14, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", letterSpacing: "0.15em", color: "#94A3B8" }}>懲罰名稱</span>
+                      <input
+                        value={addDebuffLabel}
+                        onChange={(e) => setAddDebuffLabel(e.target.value)}
+                        placeholder="例如：刷手機超過 2 小時"
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(231,76,60,0.35)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6, marginTop: 12, minWidth: 0 }}>
+                      <span style={{ fontSize: "0.58rem", color: "#94A3B8" }}>扣減 EXP（負數）</span>
+                      <input
+                        inputMode="numeric"
+                        value={addDebuffExp}
+                        onChange={(e) => setAddDebuffExp(e.target.value)}
+                        placeholder="-10"
+                        style={{
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(231,76,60,0.35)",
+                          background: "rgba(0,0,0,0.25)",
+                          color: "#E0F2FE",
+                          outline: "none",
+                        }}
+                      />
+                    </label>
+
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setAddDebuffOpen(false)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(255,255,255,0.15)",
+                          background: "transparent",
+                          color: "#94A3B8",
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          sound.playClick();
+                          const label = addDebuffLabel.trim();
+                          if (!label) {
+                            window.alert("請輸入懲罰名稱");
+                            return;
+                          }
+                          const expRaw = Number.parseInt(addDebuffExp, 10);
+                          const exp = Number.isFinite(expRaw) ? expRaw : -10;
+                          const safeExp = exp >= 0 ? -Math.max(1, exp) : exp;
+                          const nextId =
+                            customDebuffs.length === 0 ? 50_000 : Math.max(...customDebuffs.map((d) => d.id), 50_000) + 1;
+                          setCustomDebuffs((prev) => [...prev, { id: nextId, label, exp: safeExp }]);
+                          setAddDebuffOpen(false);
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(231,76,60,0.7)",
+                          background: "rgba(231,76,60,0.18)",
+                          color: "#FEE2E2",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                        }}
+                      >
+                        新增懲罰
                       </button>
                     </div>
                   </div>
