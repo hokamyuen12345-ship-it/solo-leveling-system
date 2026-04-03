@@ -1,0 +1,302 @@
+{
+  "mergeFlashcards": true,
+  "flashcards": [
+    {
+      "id": "4dc6c05e-bca8-4a04-9859-001131ef9601",
+      "word": "dentist",
+      "meaning": "牙醫",
+      "example": "I visit the dentist regularly to maintain my oral health.\n我定期看牙醫以保持口腔健康。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "3deb159b-1c26-4fe7-8a47-07b1702b5e7e",
+      "word": "pollution",
+      "meaning": "污染",
+      "example": "Air pollution has become a serious problem in many cities.\n空氣污染已成為許多城市的嚴重問題。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "ab7b715a-cc80-44bd-be17-a14c590a1961",
+      "word": "storage",
+      "meaning": "儲存／儲藏",
+      "example": "Proper food storage is essential to prevent waste.\n適當的食物儲存對避免浪費很重要。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "d29720a7-6ef3-4a84-848e-c6053bcf993d",
+      "word": "squash",
+      "meaning": "壁球／壓碎",
+      "example": "Playing squash is a great way to stay active and healthy.\n打壁球是保持活躍和健康的好方法。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "086c6bfd-da79-4dcf-a865-58fe1cf6cab6",
+      "word": "crucial",
+      "meaning": "關鍵的 ⭐",
+      "example": "Education plays a crucial role in personal development.\n教育在個人成長中扮演關鍵角色。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "fd2ba0ef-179c-4333-b59e-87ed58c0c121",
+      "word": "plenty",
+      "meaning": "大量／足夠",
+      "example": "There are plenty of opportunities for young people today.\n現今年輕人有很多機會。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "7620f344-27f2-47a4-8b5a-48a9711c1b79",
+      "word": "critical",
+      "meaning": "重要的／批判的 ⭐",
+      "example": "Critical thinking is essential in academic studies.\n批判性思維在學術中非常重要。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "bd7cd789-146d-41b3-9547-ab7b71c4079b",
+      "word": "dedication",
+      "meaning": "投入／奉獻 ⭐",
+      "example": "Success requires dedication and consistent effort.\n成功需要投入和持續努力。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "3eba7bc4-31ec-4648-9890-4d63851003dc",
+      "word": "sort of things",
+      "meaning": "各種事情（口語）",
+      "example": "I enjoy doing creative sort of things in my free time.\n我喜歡在空閒時間做各種有創意的事情。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "64bc5612-0edb-48fd-872c-5c8c6dce5b13",
+      "word": "imaginative",
+      "meaning": "有想像力的",
+      "example": "Children are naturally imaginative and curious.\n小孩天生富有想像力和好奇心。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "f2dfdcae-cdc4-4db6-974f-8871fc321924",
+      "word": "novel",
+      "meaning": "新穎的／小說",
+      "example": "This is a novel approach to solving the problem.\n這是一種解決問題的新穎方法。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "4e3a00fa-4601-4452-bcca-7c4a9801023f",
+      "word": "nutrition",
+      "meaning": "營養",
+      "example": "Good nutrition is important for maintaining health.\n良好的營養對保持健康很重要。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "f912a92f-2152-455f-8178-5dda1c10c146",
+      "word": "instructions",
+      "meaning": "指示",
+      "example": "You should follow the instructions carefully.\n你應該仔細遵循指示。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "1d7255f5-97b3-4725-85d0-817bdcb0a675",
+      "word": "injury",
+      "meaning": "受傷",
+      "example": "He suffered a serious injury during the match.\n他在比賽中受了重傷。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "6c33987d-ece9-4daa-a738-46a8f51690d0",
+      "word": "journalism",
+      "meaning": "新聞業",
+      "example": "Journalism plays a key role in informing the public.\n新聞業在傳遞資訊方面扮演重要角色。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "0d7d0699-2db3-49da-abff-eedb29883105",
+      "word": "narrow-minded",
+      "meaning": "思想狹隘的 ⭐",
+      "example": "Being narrow-minded limits personal growth.\n思想狹隘會限制個人成長。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "3942a62f-3d07-4741-bc4b-a03bb3a8ae47",
+      "word": "industry",
+      "meaning": "產業",
+      "example": "The tourism industry contributes to economic growth.\n旅遊業促進經濟發展。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "a0d27f74-437f-4f81-bead-680268ff6c4e",
+      "word": "numerous",
+      "meaning": "大量的（比 many 高級）⭐",
+      "example": "There are numerous factors affecting success.\n有許多因素影響成功。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "00cc5d63-63ac-4ccb-9954-14ef6a797bc2",
+      "word": "original",
+      "meaning": "原創的／原本的 ⭐",
+      "example": "This idea is both original and practical.\n這個想法既原創又實用。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "c33b872c-797e-4aa0-81f6-3bedd55fc05d",
+      "word": "fascinating",
+      "meaning": "吸引人的 ⭐",
+      "example": "The documentary was absolutely fascinating.\n這部紀錄片非常吸引人。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "b0696bd9-31c8-45ae-b7cd-738fa0170ebc",
+      "word": "musician",
+      "meaning": "音樂家",
+      "example": "He is a talented musician with great creativity.\n他是一位有創意的音樂家。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "b3c63b0e-92e7-4cd5-a1bc-a6dae493fce9",
+      "word": "appearance",
+      "meaning": "外表",
+      "example": "Appearance can influence first impressions.\n外表會影響第一印象。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "50e67a46-416b-4f01-84b5-e7977cb3a750",
+      "word": "manufacturer",
+      "meaning": "製造商",
+      "example": "The manufacturer focuses on product quality.\n製造商注重產品質量。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "eae2e84c-caab-4b13-b44f-06163b436679",
+      "word": "realistic",
+      "meaning": "現實的 ⭐",
+      "example": "Setting realistic goals is important for success.\n設定現實的目標對成功很重要。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "1c2f940e-8900-4881-8569-069dc068774d",
+      "word": "dishonest",
+      "meaning": "不誠實的",
+      "example": "Dishonest behavior can damage trust.\n不誠實的行為會破壞信任。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "b56eb8d3-89df-4755-b884-79050a4a6511",
+      "word": "lungs",
+      "meaning": "肺",
+      "example": "Smoking has a negative impact on the lungs.\n吸煙對肺部有負面影響。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "8d07e554-d338-4a7a-8abe-a0e135361ae7",
+      "word": "significant",
+      "meaning": "重要的（IELTS 高頻）⭐",
+      "example": "There has been a significant improvement in my English.\n我的英語有顯著進步。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "cb26aa3a-3f3d-4db8-8c84-b1445cecbc54",
+      "word": "routinely",
+      "meaning": "日常地",
+      "example": "He routinely checks his emails every morning.\n他每天早上都會查看電郵。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "26311bc0-43c1-407c-8549-ebef6d89a4e0",
+      "word": "designated",
+      "meaning": "指定的",
+      "example": "This area is designated for parking only.\n這個區域是指定停車區。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "be7a11ad-2dc1-4448-8ffa-763a6a01b4a7",
+      "word": "urgent",
+      "meaning": "緊急的",
+      "example": "This is an urgent issue that needs immediate attention.\n這是一個需要立即處理的緊急問題。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "590095de-aa57-4b4d-9d5a-a506737a4901",
+      "word": "conservation",
+      "meaning": "保育 ⭐",
+      "example": "Wildlife conservation is essential for protecting ecosystems.\n野生動物保育對保護生態系統很重要。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "bb907487-3d3f-4b68-bbf3-40c24f26b474",
+      "word": "illegal",
+      "meaning": "非法的 ⭐",
+      "example": "Illegal activities can lead to serious consequences.\n非法行為會帶來嚴重後果。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    },
+    {
+      "id": "84916c91-4417-48d4-85e8-7e3387499b79",
+      "word": "tourism",
+      "meaning": "旅遊業（再強化）⭐",
+      "example": "Sustainable tourism helps protect the environment.\n可持續旅遊有助保護環境。",
+      "category": "vocab",
+      "mastered": false,
+      "createdAt": "2026-04-03"
+    }
+  ]
+}
