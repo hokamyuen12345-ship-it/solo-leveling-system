@@ -1503,7 +1503,39 @@ function CardsPanel({
               <input type="checkbox" checked={emastered} onChange={(e) => setEmastered(e.target.checked)} style={{ width: 18, height: 18, accentColor: "var(--ielts-accent)" }} />
               標記為已掌握
             </label>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div
+              style={{
+                marginTop: 18,
+                paddingTop: 16,
+                borderTop: "1px solid var(--ielts-border-light)",
+              }}
+            >
+              <button
+                type="button"
+                className="ielts-btn"
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(220, 38, 38, 0.35)",
+                  background: "rgba(220, 38, 38, 0.06)",
+                  color: "var(--ielts-danger)",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  if (!editingCard) return;
+                  if (window.confirm("確定刪除此單詞？此操作無法復原。")) {
+                    store.removeFlashcard(editingCard.id);
+                    setEditId(null);
+                  }
+                }}
+              >
+                刪除此單詞
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
               <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={() => setEditId(null)}>
                 取消
               </button>
@@ -1539,6 +1571,26 @@ function CardsPanel({
                 <span className="ielts-text-heading" style={{ fontSize: 17 }}>
                   {c.word}
                 </span>
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: "1px solid var(--ielts-accent)",
+                    color: "var(--ielts-accent)",
+                    background: "var(--ielts-accent-light)",
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    lineHeight: 1.2,
+                  }}
+                  title="朗讀單字"
+                  onClick={() => speakEnglish(c.word)}
+                >
+                  🔊 朗讀
+                </button>
                 {c.mastered && (
                   <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ielts-success)" }}>✓ 已掌握</span>
                 )}
@@ -1553,24 +1605,6 @@ function CardsPanel({
               ) : null}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
-              <button
-                type="button"
-                className="ielts-btn"
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  border: "1px solid var(--ielts-accent)",
-                  color: "var(--ielts-accent)",
-                  background: "var(--ielts-accent-light)",
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  cursor: "pointer",
-                }}
-                title="朗讀單字"
-                onClick={() => speakEnglish(c.word)}
-              >
-                🔊 朗讀
-              </button>
               <button
                 type="button"
                 className="ielts-btn"
@@ -1595,16 +1629,6 @@ function CardsPanel({
                 onClick={() => store.toggleFlashcardMastered(c.id)}
               >
                 {c.mastered ? "取消掌握" : "已掌握"}
-              </button>
-              <button
-                type="button"
-                className="ielts-btn"
-                style={{ fontSize: 12, color: "var(--ielts-danger)", border: "none", background: "none", cursor: "pointer", fontWeight: 600 }}
-                onClick={() => {
-                  if (window.confirm("確定刪除此單詞？")) store.removeFlashcard(c.id);
-                }}
-              >
-                刪除
               </button>
             </div>
           </div>
