@@ -123,6 +123,19 @@ function todayIso(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+/** 同一 id 只保留第一張；缺 id 則補 uuid（避免重複 merge／匯入造成 React key 重複） */
+function dedupeFlashcardsById(cards: Flashcard[]): Flashcard[] {
+  const seen = new Set<string>();
+  const out: Flashcard[] = [];
+  for (const c of cards) {
+    const id = typeof c.id === "string" && c.id.trim() ? c.id.trim() : crypto.randomUUID();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id === c.id ? c : { ...c, id });
+  }
+  return out;
+}
+
 function safeParse<T>(raw: string | null): T | null {
   if (!raw) return null;
   try {
@@ -331,7 +344,7 @@ export function useIELTSStore() {
       breakMin: (lsGet<Settings>(KEY_SETTINGS) ?? defaultSettings()).pomodoroBreakMin,
       startedAt: null,
     });
-    setFlashcards(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []);
+    setFlashcards(dedupeFlashcardsById(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []));
     setSwRecords(migrateSwRecords(lsGet<unknown>(IELTS_SW_RECORDS_KEY) ?? []));
     setReady(true);
   }, []);
@@ -711,10 +724,16 @@ export function useIELTSStore() {
     if (obj.wrongItems) setWrongItems(obj.wrongItems);
     if (obj.pomodoroSession) setPomo(obj.pomodoroSession);
     if (obj.flashcards && Array.isArray(obj.flashcards)) {
+      const incoming = dedupeFlashcardsById(obj.flashcards as Flashcard[]);
       if (mergeFlashcards) {
-        setFlashcards((prev) => [...obj.flashcards!, ...prev]);
+        setFlashcards((prev) => {
+          const base = dedupeFlashcardsById(prev);
+          const seen = new Set(base.map((x) => x.id));
+          const add = incoming.filter((x) => !seen.has(x.id));
+          return [...add, ...base];
+        });
       } else {
-        setFlashcards(obj.flashcards);
+        setFlashcards(incoming);
       }
     }
     if (obj.swRecords) setSwRecords(obj.swRecords);
