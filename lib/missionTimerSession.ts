@@ -1,6 +1,9 @@
 /** 任務全螢幕計時改為背景執行時寫入，離開首頁（如 /ielts）仍依結束時間戳倒數 */
 
 export const MISSION_TIMER_SESSION_KEY = "sl_mission_timer_session_v1";
+
+/** 從 IELTS 背景條按「返回計時」：略過首頁 Boot，並使用簡潔載入 */
+export const SL_SKIP_BOOT_RETURN_MISSION_TIMER_V1 = "sl_skip_boot_return_mission_timer_v1";
 export const MISSION_TIMER_PENDING_EXPIRE_KEY = "sl_mission_timer_pending_expire_v1";
 
 export type MissionTimerStoredQuest = {

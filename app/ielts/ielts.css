@@ -461,3 +461,8 @@ mark.ielts-hl-inline.ielts-hl-red {
 .ielts-pomo-body[data-open="true"] {
   max-height: 280px;
 }
+
+/* 主系統背景計時條改為頂部 fixed 時，避免遮住 IELTS 首屏標題（由 MissionTimerBar 寫入 body[data-sl-mission-bar-open]） */
+body[data-sl-mission-bar-open="1"] .ielts-root {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 96px);
+}

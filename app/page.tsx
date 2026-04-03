@@ -11,6 +11,7 @@ import {
   clearPendingExpire,
   readMissionTimerSession,
   readPendingExpire,
+  SL_SKIP_BOOT_RETURN_MISSION_TIMER_V1,
   writeMissionTimerSession,
   type MissionTimerStoredQuest,
 } from "@/lib/missionTimerSession";
@@ -1872,6 +1873,8 @@ export default function Home() {
   const [emergencyActive, setEmergencyActive] = useState(false);
   const [emergencyDismissedForToday, setEmergencyDismissedForToday] = useState(false);
   const [bootComplete, setBootComplete] = useState(false);
+  /** 從 IELTS「返回計時」：略過全螢幕 SYSTEM LOADING 文案，僅短暫顯示同色底 */
+  const [compactHomeLoadFromTimerReturn, setCompactHomeLoadFromTimerReturn] = useState(false);
   const [authPortalReady, setAuthPortalReady] = useState(false);
   const authAnchorRef = useRef<HTMLDivElement | null>(null);
   const [showRankUp, setShowRankUp] = useState(false);
@@ -1960,10 +1963,19 @@ export default function Home() {
         pendingFocusTasksFromIeltsRef.current = true;
         setBootComplete(true);
       }
+      if (sessionStorage.getItem(SL_SKIP_BOOT_RETURN_MISSION_TIMER_V1) === "1") {
+        sessionStorage.removeItem(SL_SKIP_BOOT_RETURN_MISSION_TIMER_V1);
+        setBootComplete(true);
+        setCompactHomeLoadFromTimerReturn(true);
+      }
     } catch {
       /* private mode / no sessionStorage */
     }
   }, []);
+
+  useEffect(() => {
+    if (loaded) setCompactHomeLoadFromTimerReturn(false);
+  }, [loaded]);
 
   /** 窄視窗（≤768px）：底部 IELTS 捷徑、較鬆的安全區內距、分頁短標籤等 */
   const [mobileIeltsFab, setMobileIeltsFab] = useState(false);
@@ -2810,10 +2822,14 @@ export default function Home() {
           }}
         />
       ) : !loaded ? (
-        <main style={{background:"var(--bg-primary)",minHeight:"100dvh",display:"flex",alignItems:"center",
-          justifyContent:"center",fontFamily:"var(--font-ui)",color:"var(--text-muted)"}}>
-          SYSTEM LOADING...
-        </main>
+        compactHomeLoadFromTimerReturn ? (
+          <main style={{ background: "var(--bg-primary)", minHeight: "100dvh" }} aria-busy="true" />
+        ) : (
+          <main style={{background:"var(--bg-primary)",minHeight:"100dvh",display:"flex",alignItems:"center",
+            justifyContent:"center",fontFamily:"var(--font-ui)",color:"var(--text-muted)"}}>
+            SYSTEM LOADING...
+          </main>
+        )
       ) : (
     <main style={{
       background: penaltyModeActive ? "rgba(80,0,0,0.12)" : "transparent",

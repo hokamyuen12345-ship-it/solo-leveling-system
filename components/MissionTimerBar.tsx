@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   MISSION_TIMER_SESSION_KEY,
+  SL_SKIP_BOOT_RETURN_MISSION_TIMER_V1,
   type MissionTimerSession,
   clearMissionTimerSession,
   writePendingExpire,
@@ -23,7 +23,7 @@ function readSession(): MissionTimerSession | null {
   }
 }
 
-/** 在 /ielts（等子頁）顯示：主系統任務背景倒數，可回主頁還原全螢幕 */
+/** 在 /ielts（等子頁）頂部顯示：主系統任務背景倒數；「返回計時」略過 Boot 回首頁 */
 export function MissionTimerBar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -31,6 +31,13 @@ export function MissionTimerBar() {
   const [left, setLeft] = useState(0);
 
   const showOnIelts = pathname === "/ielts" || pathname?.startsWith("/ielts/");
+
+  useEffect(() => {
+    const open = showOnIelts && readSession() !== null;
+    if (open) document.body.setAttribute("data-sl-mission-bar-open", "1");
+    else document.body.removeAttribute("data-sl-mission-bar-open");
+    return () => document.body.removeAttribute("data-sl-mission-bar-open");
+  }, [showOnIelts, snap]);
 
   useEffect(() => {
     const tick = () => {
@@ -44,6 +51,11 @@ export function MissionTimerBar() {
         writePendingExpire(s.quest);
         clearMissionTimerSession();
         setSnap(null);
+        try {
+          sessionStorage.setItem(SL_SKIP_BOOT_RETURN_MISSION_TIMER_V1, "1");
+        } catch {
+          /* */
+        }
         router.push("/");
         return;
       }
@@ -61,13 +73,22 @@ export function MissionTimerBar() {
   const ss = left % 60;
   const label = snap.quest.label.length > 28 ? `${snap.quest.label.slice(0, 26)}…` : snap.quest.label;
 
+  const goReturnTimer = () => {
+    try {
+      sessionStorage.setItem(SL_SKIP_BOOT_RETURN_MISSION_TIMER_V1, "1");
+    } catch {
+      /* */
+    }
+    router.push("/");
+  };
+
   return (
     <div
       style={{
         position: "fixed",
         left: "max(10px, env(safe-area-inset-left))",
         right: "max(10px, env(safe-area-inset-right))",
-        bottom: "max(10px, env(safe-area-inset-bottom))",
+        top: "max(10px, env(safe-area-inset-top))",
         zIndex: 9998,
         display: "flex",
         alignItems: "center",
@@ -101,9 +122,9 @@ export function MissionTimerBar() {
       >
         {String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}
       </div>
-      <Link
-        href="/"
-        prefetch
+      <button
+        type="button"
+        onClick={goReturnTimer}
         style={{
           flexShrink: 0,
           padding: "8px 14px",
@@ -114,12 +135,13 @@ export function MissionTimerBar() {
           fontSize: 11,
           fontWeight: 800,
           letterSpacing: "0.08em",
-          textDecoration: "none",
           whiteSpace: "nowrap",
+          cursor: "pointer",
+          fontFamily: "inherit",
         }}
       >
-        回主頁還原
-      </Link>
+        返回計時
+      </button>
     </div>
   );
 }
