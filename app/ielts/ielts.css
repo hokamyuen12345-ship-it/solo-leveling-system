@@ -11,6 +11,9 @@
   --ielts-accent-light: #ffe4ea;
   --ielts-accent-soft: #ff8fa8;
   --ielts-accent-emphasis: #d93b63;
+  /* AI 填空按鈕：同系粉但略偏莓紫，與默寫區隔 */
+  --ielts-accent-cloze: #c45a8c;
+  --ielts-accent-cloze-light: #f5e9f2;
 
   --ielts-listening: #56ccf2;
   --ielts-reading: #6fcf97;
@@ -58,6 +61,8 @@
   --ielts-accent-light: #fff1f4;
   --ielts-accent-soft: #ff8fa8;
   --ielts-accent-emphasis: #ff3e6c;
+  --ielts-accent-cloze: #d65c9e;
+  --ielts-accent-cloze-light: #fceaf5;
 
   --ielts-border-light: #e5dfd6;
   --ielts-border-medium: #d6d0c7;
@@ -83,6 +88,8 @@
   --ielts-accent-light: #1e3a5f;
   --ielts-accent-soft: #7eb6ff;
   --ielts-accent-emphasis: #3b82f6;
+  --ielts-accent-cloze: #7aa3ff;
+  --ielts-accent-cloze-light: #1a3254;
 
   --ielts-progress-track: #2a2f3a;
   --ielts-progress-fill: #5b9cff;
@@ -119,6 +126,8 @@
   --ielts-accent: #ff6b9a;
   --ielts-accent-light: #3d242e;
   --ielts-accent-emphasis: #ff3e6c;
+  --ielts-accent-cloze: #ff7eb8;
+  --ielts-accent-cloze-light: #3a2232;
 
   --ielts-hero-gradient: linear-gradient(135deg, #4a1526 0%, #ff3e6c 45%, #ff6b9a 100%);
   --ielts-pomodoro: #ff6b9a;

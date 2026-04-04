@@ -1150,7 +1150,6 @@ function QuestCard({
   optionalDisplayLabel,
   priority,
   primaryActionLabel,
-  onDelete,
 }: {
   quest: Quest;
   accentColor: string;
@@ -1166,8 +1165,6 @@ function QuestCard({
   priority?: boolean;
   /** 主按鈕文案（例如一鍵完成） */
   primaryActionLabel?: string;
-  /** 自訂任務刪除 */
-  onDelete?: () => void;
 }) {
   const stars = getQuestDifficulty(quest);
   const [hover, setHover] = useState(false);
@@ -1230,27 +1227,6 @@ function QuestCard({
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {!!onDelete && (
-            <button
-              type="button"
-              onClick={() => onDelete()}
-              style={{
-                background: "rgba(231,76,60,0.12)",
-                border: "1px solid rgba(231,76,60,0.35)",
-                borderRadius: "6px",
-                padding: "8px 10px",
-                color: "#F87171",
-                fontSize: "0.65rem",
-                fontWeight: 700,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-              aria-label="刪除自訂任務"
-              title="刪除自訂任務"
-            >
-              刪除
-            </button>
-          )}
           {!!onSettings && (
             <button
               type="button"
@@ -3653,7 +3629,6 @@ export default function Home() {
                             onStart={()=>toggle(q.id)}
                             onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
                             onSettings={() => openQuestSettings(q)}
-                            onDelete={q.id >= TOP_CUSTOM_QUEST_MIN_ID ? () => setTopCustomQuests((prev) => prev.filter((c) => c.id !== q.id)) : undefined}
                             onHoverSound={sound.playHover}
                             onClickSound={sound.playClick}
                             idx={idx}
@@ -3784,7 +3759,6 @@ export default function Home() {
                                 onStart={()=>toggle(q.id)}
                                 onUndo={()=>setCompleted(completed.filter(x=>x!==q.id))}
                                 onSettings={() => openQuestSettings(q)}
-                                onDelete={q.id >= CUSTOM_QUEST_MIN_ID ? () => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id)) : undefined}
                                 onHoverSound={sound.playHover}
                                 onClickSound={sound.playClick}
                                 isAi={aiQuests.some((a) => a.id === q.id)}
@@ -3830,7 +3804,6 @@ export default function Home() {
                               onStart={() => toggle(q.id)}
                               onUndo={() => setCompleted(completed.filter((x) => x !== q.id))}
                               onSettings={() => openQuestSettings(q)}
-                              onDelete={() => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id))}
                               onHoverSound={sound.playHover}
                               onClickSound={sound.playClick}
                               idx={idx}
@@ -3859,7 +3832,6 @@ export default function Home() {
                               onStart={() => toggle(q.id)}
                               onUndo={() => setCompleted(completed.filter((x) => x !== q.id))}
                               onSettings={() => openQuestSettings(q)}
-                              onDelete={() => setCustomQuests((prev) => prev.filter((c) => c.id !== q.id))}
                               onHoverSound={sound.playHover}
                               onClickSound={sound.playClick}
                               idx={idx}
