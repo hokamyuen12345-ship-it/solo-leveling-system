@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { speakEnglish, stopSpeaking } from "./speech";
 import { buildStudySessionOrder } from "./study-order";
 import { flashcardCategoryLabel, type Flashcard, type FlashcardCategoryDef } from "./store";
@@ -41,18 +41,30 @@ type Props = {
   categoryDefs: FlashcardCategoryDef[];
   onKnow: (id: string) => void;
   onDontKnow: (id: string) => void;
+  onReviewAgain?: (id: string) => void;
   themeDark?: boolean;
   accentPink?: boolean;
 };
 
 /** 默寫：只看字卡「解釋」，輸入對應英文；逐字母提示格會隨正確輸入變暗。 */
-export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow, onDontKnow, themeDark, accentPink }: Props) {
+export function FlashcardDictation({
+  open,
+  onClose,
+  cards,
+  categoryDefs,
+  onKnow,
+  onDontKnow,
+  onReviewAgain,
+  themeDark,
+  accentPink,
+}: Props) {
   const [order, setOrder] = useState<Flashcard[]>([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<"idle" | "correct" | "wrong">("idle");
-  const [showExampleHint, setShowExampleHint] = useState(false);
+  const [reviewHint, setReviewHint] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const reviewHintTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open || cards.length === 0) return;
@@ -60,7 +72,6 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
     setIdx(0);
     setInput("");
     setFeedback("idle");
-    setShowExampleHint(false);
     // 僅開啟時排程，避免作答中父層 cards 參考變動而重開一輪
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -69,13 +80,23 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
     if (!open) stopSpeaking();
   }, [open]);
 
+  useEffect(() => {
+    return () => {
+      if (reviewHintTimerRef.current !== null) window.clearTimeout(reviewHintTimerRef.current);
+    };
+  }, []);
+
   const current = order[idx] ?? null;
 
   useEffect(() => {
     if (!current) return;
     setInput("");
     setFeedback("idle");
-    setShowExampleHint(false);
+    setReviewHint(false);
+    if (reviewHintTimerRef.current !== null) {
+      window.clearTimeout(reviewHintTimerRef.current);
+      reviewHintTimerRef.current = null;
+    }
     const t = window.setTimeout(() => inputRef.current?.focus(), 180);
     return () => window.clearTimeout(t);
   }, [current?.id, idx]);
@@ -101,7 +122,6 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
       else onDontKnow(current.id);
       setFeedback("idle");
       setInput("");
-      setShowExampleHint(false);
       if (idx + 1 >= order.length) onClose();
       else setIdx((i) => i + 1);
     },
@@ -117,9 +137,19 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
     if (!current || idx + 1 >= order.length) return;
     setFeedback("idle");
     setInput("");
-    setShowExampleHint(false);
     setIdx((i) => i + 1);
   }, [current, idx, order.length]);
+
+  const triggerReviewAgain = useCallback(() => {
+    if (!onReviewAgain || !current) return;
+    onReviewAgain(current.id);
+    if (reviewHintTimerRef.current !== null) window.clearTimeout(reviewHintTimerRef.current);
+    setReviewHint(true);
+    reviewHintTimerRef.current = window.setTimeout(() => {
+      reviewHintTimerRef.current = null;
+      setReviewHint(false);
+    }, 1600);
+  }, [current, onReviewAgain]);
 
   const submit = useCallback(() => {
     if (!current || feedback !== "idle") return;
@@ -135,7 +165,17 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
 
   if (!open || !portalReady || !current) return null;
 
-  const hasExample = Boolean(current.example?.trim());
+  const reviewAgainBtnStyle: CSSProperties = {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(202, 138, 4, 0.35)",
+    background: "linear-gradient(180deg, #fefce8 0%, #fef9c3 100%)",
+    color: "#713f12",
+    fontWeight: 800,
+    fontSize: 13,
+    cursor: "pointer",
+    boxShadow: "var(--ielts-shadow-sm)",
+  };
 
   const body = (
     <div
@@ -238,33 +278,41 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
           {flashcardCategoryLabel(current.category, categoryDefs)}
         </span>
 
-        <div className="ielts-text-caption" style={{ color: "var(--ielts-writing)", fontWeight: 800, letterSpacing: "0.12em", fontSize: 11, margin: 0 }}>
-          題目 · 解釋／翻譯
-        </div>
-
-        <div
-          className="ielts-card-static"
-          style={{
-            padding: "20px 18px",
-            border: "2px solid rgba(245, 158, 11, 0.45)",
-            background: "rgba(245, 158, 11, 0.08)",
-            borderRadius: 14,
-            textAlign: "center",
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", alignSelf: "stretch" }}>
           <div
-            className="ielts-text-heading"
-            style={{ fontSize: 20, lineHeight: 1.55, color: "var(--ielts-text-1)", fontWeight: 800, textAlign: "center" }}
+            className="ielts-card-static"
+            style={{
+              padding: "20px 18px",
+              border: "2px solid rgba(245, 158, 11, 0.45)",
+              background: "rgba(245, 158, 11, 0.08)",
+              borderRadius: 14,
+              textAlign: "center",
+              width: "100%",
+              boxSizing: "border-box",
+            }}
           >
-            {current.meaning}
+            <div
+              className="ielts-text-heading"
+              style={{ fontSize: 20, lineHeight: 1.55, color: "var(--ielts-text-1)", fontWeight: 800, textAlign: "center" }}
+            >
+              {current.meaning}
+            </div>
           </div>
         </div>
 
-        {wordChars.length > 0 && (
+        {wordChars.length > 0 ? (
           <div
             role="group"
             aria-label="拼字提示：字母已打亂；依聽寫由左而右輸入，對應位置打對時該格變暗"
-            style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginTop: 2 }}
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              justifyContent: "center",
+              width: "100%",
+              marginTop: 10,
+              boxSizing: "border-box",
+            }}
           >
             {shuffledLetterTiles.map(({ char: ch, origIndex: j }) => {
               const matched = prefixFullyMatches(wordChars, inputChars, j + 1);
@@ -296,46 +344,7 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
               );
             })}
           </div>
-        )}
-
-        {hasExample && (
-          <div>
-            <button
-              type="button"
-              className="ielts-btn"
-              onClick={() => setShowExampleHint((v) => !v)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 10,
-                border: "1px dashed var(--ielts-border-light)",
-                background: "transparent",
-                color: "var(--ielts-text-3)",
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              {showExampleHint ? "隱藏例句提示" : "需要時顯示例句提示（含英文）"}
-            </button>
-            {showExampleHint && (
-              <p
-                className="ielts-text-body"
-                style={{
-                  margin: "10px 0 0",
-                  fontSize: 14,
-                  color: "var(--ielts-text-2)",
-                  fontStyle: "italic",
-                  lineHeight: 1.55,
-                  padding: "12px 14px",
-                  borderRadius: 10,
-                  background: "var(--ielts-bg-hover)",
-                }}
-              >
-                {current.example}
-              </p>
-            )}
-          </div>
-        )}
+        ) : null}
 
         <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
           <input
@@ -365,23 +374,19 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
           />
         </div>
 
-        {feedback === "wrong" && (
-          <p className="ielts-text-body" style={{ margin: 0, color: "var(--ielts-danger)", fontWeight: 700 }}>
-            正確答案：{current.word}
-          </p>
-        )}
         {feedback === "correct" && (
           <p className="ielts-text-body" style={{ margin: 0, color: "var(--ielts-success)", fontWeight: 800 }}>
             ✓ 正確
           </p>
         )}
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, width: "100%", alignItems: "flex-start" }}>
           <button
             type="button"
             className="ielts-btn"
             onClick={() => speakEnglish(current.word)}
             style={{
+              flexShrink: 0,
               padding: "12px 16px",
               borderRadius: 12,
               border: "1px solid var(--ielts-border-light)",
@@ -394,73 +399,51 @@ export function FlashcardDictation({ open, onClose, cards, categoryDefs, onKnow,
           >
             🔊 聽發音
           </button>
-          <button
-            type="button"
-            className="ielts-btn"
-            disabled={feedback !== "idle"}
-            onClick={submit}
-            style={{
-              flex: 1,
-              minWidth: 120,
-              padding: "14px 18px",
-              borderRadius: 12,
-              border: "none",
-              background: feedback === "idle" ? "var(--ielts-accent)" : "var(--ielts-border-light)",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 15,
-              cursor: feedback === "idle" ? "pointer" : "default",
-              opacity: feedback === "idle" ? 1 : 0.7,
-            }}
-          >
-            確認答案
-          </button>
-        </div>
-
-        {feedback === "wrong" && (
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: "1 1 160px", minWidth: 120, display: "flex", flexDirection: "column", gap: 8 }}>
             <button
               type="button"
               className="ielts-btn"
-              onClick={() => goNext(false)}
+              disabled={feedback !== "idle"}
+              onClick={submit}
               style={{
-                flex: 1,
-                padding: "14px 12px",
-                borderRadius: 14,
+                width: "100%",
+                padding: "14px 18px",
+                borderRadius: 12,
                 border: "none",
-                background: "#fef2f2",
-                color: "var(--ielts-danger)",
+                background: feedback === "idle" ? "var(--ielts-accent)" : "var(--ielts-border-light)",
+                color: "#fff",
                 fontWeight: 800,
                 fontSize: 15,
-                cursor: "pointer",
+                cursor: feedback === "idle" ? "pointer" : "default",
+                opacity: feedback === "idle" ? 1 : 0.7,
+                boxSizing: "border-box",
               }}
             >
-              跳過（不認識）
+              確認答案
             </button>
-            <button
-              type="button"
-              className="ielts-btn"
-              onClick={() => {
-                setInput("");
-                setFeedback("idle");
-                inputRef.current?.focus();
-              }}
-              style={{
-                flex: 1,
-                padding: "14px 12px",
-                borderRadius: 14,
-                border: "none",
-                background: "var(--ielts-bg-hover)",
-                color: "var(--ielts-text-2)",
-                fontWeight: 800,
-                fontSize: 15,
-                cursor: "pointer",
-              }}
-            >
-              再試
-            </button>
+            {onReviewAgain ? (
+              <>
+                {reviewHint ? (
+                  <p className="ielts-text-caption" style={{ margin: 0, textAlign: "center", color: "var(--ielts-success)", fontWeight: 700 }}>
+                    已加入待複習清單
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  onClick={triggerReviewAgain}
+                  style={{
+                    ...reviewAgainBtnStyle,
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  再測試
+                </button>
+              </>
+            ) : null}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

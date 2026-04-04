@@ -29,6 +29,7 @@ type Props = {
   onClozeFetched: (id: string, data: ClozePayload) => void;
   onClozeError: (id: string, message: string) => void;
   onRetryClozePrefetch: () => void;
+  onReviewAgain?: (id: string) => void;
 };
 
 function renderEnWithBlank(enSentence: string) {
@@ -78,18 +79,21 @@ export function FlashcardCloze({
   onClozeFetched,
   onClozeError,
   onRetryClozePrefetch,
+  onReviewAgain,
 }: Props) {
   const [order, setOrder] = useState<Flashcard[]>([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<"idle" | "correct" | "wrong">("idle");
   const [showExampleHint, setShowExampleHint] = useState(false);
+  const [reviewHint, setReviewHint] = useState(false);
   const [simpleMode, setSimpleMode] = useState(false);
   const [cloze, setCloze] = useState<ClozePayload | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = useState("");
   const [pasteKeyDraft, setPasteKeyDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const reviewHintTimerRef = useRef<number | null>(null);
 
   const clozeByIdRef = useRef(clozeById);
   const clozeErrRef = useRef(clozeErrById);
@@ -232,6 +236,14 @@ export function FlashcardCloze({
     setLoadError("");
   }, [open, currentId, simpleMode, clozeHitForCurrent, clozeErrForCurrent]);
 
+  useEffect(() => {
+    setReviewHint(false);
+    if (reviewHintTimerRef.current !== null) {
+      window.clearTimeout(reviewHintTimerRef.current);
+      reviewHintTimerRef.current = null;
+    }
+  }, [currentId]);
+
   const total = order.length;
   const readyInRound = useMemo(() => order.filter((c) => clozeById[c.id]).length, [order, clozeById]);
   const stillGenerating = useMemo(
@@ -362,6 +374,42 @@ export function FlashcardCloze({
           下一題（跳過）
         </button>
       </div>
+      {onReviewAgain ? (
+        <>
+          <button
+            type="button"
+            className="ielts-btn"
+            onClick={() => {
+              onReviewAgain(current.id);
+              if (reviewHintTimerRef.current !== null) window.clearTimeout(reviewHintTimerRef.current);
+              setReviewHint(true);
+              reviewHintTimerRef.current = window.setTimeout(() => {
+                reviewHintTimerRef.current = null;
+                setReviewHint(false);
+              }, 1600);
+            }}
+            style={{
+              width: "100%",
+              marginBottom: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid var(--ielts-border-light)",
+              background: "var(--ielts-bg-hover)",
+              color: "var(--ielts-text-2)",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            再測試（加入待複習）
+          </button>
+          {reviewHint ? (
+            <p className="ielts-text-caption" style={{ margin: "0 0 10px", textAlign: "center", color: "var(--ielts-success)", fontWeight: 700 }}>
+              已加入待複習清單
+            </p>
+          ) : null}
+        </>
+      ) : null}
 
       <div
         style={{

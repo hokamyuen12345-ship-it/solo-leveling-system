@@ -28,6 +28,8 @@ import {
   type SpeakingWritingEntry,
   type SpeakingWritingType,
   flashcardCategoryLabel,
+  FLASHCARD_REVIEW_QUEUE_FILTER_ID,
+  isSwRecordWriting,
 } from "./store";
 import { useRouter } from "next/navigation";
 
@@ -1488,10 +1490,11 @@ function CardsPanel({
     if (editId && !store.flashcards.some((c) => c.id === editId)) setEditId(null);
   }, [editId, store.flashcards]);
 
-  const displayFilter = useMemo(
-    () => (filter === "all" || cats.some((c) => c.id === filter) ? filter : "all"),
-    [filter, cats],
-  );
+  const displayFilter = useMemo(() => {
+    if (filter === FLASHCARD_REVIEW_QUEUE_FILTER_ID) return filter;
+    if (filter === "all" || cats.some((c) => c.id === filter)) return filter;
+    return "all";
+  }, [filter, cats]);
   const newCatResolved = cats.some((c) => c.id === newCat) ? newCat : (cats[0]?.id ?? "vocab");
   const ecatResolved = cats.some((c) => c.id === ecat) ? ecat : (cats[0]?.id ?? "vocab");
 
@@ -1510,8 +1513,12 @@ function CardsPanel({
 
   const filtered = useMemo(() => {
     if (displayFilter === "all") return store.flashcards;
+    if (displayFilter === FLASHCARD_REVIEW_QUEUE_FILTER_ID) {
+      const byId = new Map(store.flashcards.map((c) => [c.id, c]));
+      return store.flashcardReviewQueue.map((id) => byId.get(id)).filter((c): c is Flashcard => Boolean(c));
+    }
     return store.flashcards.filter((c) => c.category === displayFilter);
-  }, [store.flashcards, displayFilter]);
+  }, [store.flashcardReviewQueue, store.flashcards, displayFilter]);
 
   const total = store.flashcards.length;
   const masteredN = store.flashcards.filter((c) => c.mastered).length;
@@ -1590,6 +1597,7 @@ function CardsPanel({
         categoryDefs={cats}
         onKnow={(id) => store.setFlashcardMastered(id, true)}
         onDontKnow={(id) => store.setFlashcardMastered(id, false)}
+        onReviewAgain={store.addFlashcardToReviewQueue}
       />
       <FlashcardDictation
         open={dictationOpen}
@@ -1600,6 +1608,7 @@ function CardsPanel({
         categoryDefs={cats}
         onKnow={(id) => store.setFlashcardMastered(id, true)}
         onDontKnow={(id) => store.setFlashcardMastered(id, false)}
+        onReviewAgain={store.addFlashcardToReviewQueue}
       />
       <FlashcardCloze
         open={clozeOpen}
@@ -1616,13 +1625,15 @@ function CardsPanel({
         onRetryClozePrefetch={onRetryClozePrefetch}
         onKnow={(id) => store.setFlashcardMastered(id, true)}
         onDontKnow={(id) => store.setFlashcardMastered(id, false)}
+        onReviewAgain={store.addFlashcardToReviewQueue}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {[
           { label: "總詞彙", v: total, c: "var(--ielts-accent)" },
           { label: "已掌握", v: masteredN, c: "var(--ielts-success)" },
-          { label: "待複習", v: dueN, c: "var(--ielts-warning)" },
+          { label: "未掌握", v: dueN, c: "var(--ielts-warning)" },
+          { label: "待複習", v: store.flashcardReviewQueue.length, c: "var(--ielts-speaking)" },
         ].map((x, i) => (
           <div key={x.label} className="ielts-card-static ielts-enter" style={{ padding: 14, textAlign: "center", animationDelay: `${i * 0.06}s` }}>
             <div className="ielts-text-display" style={{ color: x.c, fontSize: 28 }}>
@@ -1689,7 +1700,11 @@ function CardsPanel({
         </div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        {[{ id: "all" as const, label: "全部" }, ...cats.map((c) => ({ id: c.id, label: c.label }))].map((p) => (
+        {[
+          { id: "all" as const, label: "全部" },
+          { id: FLASHCARD_REVIEW_QUEUE_FILTER_ID, label: "待複習" },
+          ...cats.map((c) => ({ id: c.id, label: c.label })),
+        ].map((p) => (
           <button
             key={p.id}
             type="button"
@@ -2070,7 +2085,9 @@ function CardsPanel({
       {filtered.length === 0 ? (
         <div className="ielts-card-static" style={{ padding: 32, textAlign: "center" }}>
           <p className="ielts-text-body" style={{ color: "var(--ielts-text-3)" }}>
-            尚無單詞。點「新增單詞」開始建立字卡。
+            {displayFilter === FLASHCARD_REVIEW_QUEUE_FILTER_ID
+              ? "待複習清單尚無項目。可在測驗、默寫或 AI 填空中按「再測試」加入。"
+              : "尚無單詞。點「新增單詞」開始建立字卡。"}
           </p>
         </div>
       ) : (
@@ -2125,6 +2142,25 @@ function CardsPanel({
               ) : null}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+              {displayFilter === FLASHCARD_REVIEW_QUEUE_FILTER_ID ? (
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: "1px solid var(--ielts-border-medium)",
+                    color: "var(--ielts-text-2)",
+                    background: "var(--ielts-bg-hover)",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => store.removeFlashcardFromReviewQueue(c.id)}
+                >
+                  移出清單
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="ielts-btn"
@@ -2159,11 +2195,21 @@ function CardsPanel({
 }
 
 function recordTypeLabel(t: SpeakingWritingType): string {
-  return t === "writing" ? "Writing" : "Speaking";
+  if (t === "writing_part1") return "Writing Part 1";
+  if (t === "writing_part2" || t === "writing") return "Writing Part 2";
+  return "Speaking";
 }
 
 function recordQuestions(t: SpeakingWritingType): string[] {
-  if (t === "writing") {
+  if (t === "writing_part1") {
+    return [
+      "圖表／圖片整體趨勢或主要特徵是什麼？試用一句話概述。",
+      "你要分幾段寫？每段想寫哪幾個重點或數據？",
+      "有沒有需要對比、排序或極值的項目？",
+      "開頭概述與結尾，你打算怎麼寫才清楚又不重複？",
+    ];
+  }
+  if (t === "writing_part2" || t === "writing") {
     return [
       "你的立場/主論點是什麼？一句話說清楚。",
       "你會用哪兩個主要理由支撐？各自的例子是什麼？",
@@ -2199,7 +2245,7 @@ function RecordsPanel({
   // 列表頁已改成獨立路由 /ielts/records/[id]，此 state 僅保留相容（不再用於顯示詳情）
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  const [rtype, setRtype] = useState<SpeakingWritingType>("writing");
+  const [rtype, setRtype] = useState<SpeakingWritingType>("writing_part2");
   const [prompt, setPrompt] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -2208,7 +2254,12 @@ function RecordsPanel({
   const active = useMemo(() => (activeId ? store.swRecords.find((r) => r.id === activeId) ?? null : null), [activeId, store.swRecords]);
 
   const filtered = useMemo(() => {
-    const base = filter === "all" ? store.swRecords : store.swRecords.filter((r) => r.type === filter);
+    const base =
+      filter === "all"
+        ? store.swRecords
+        : filter === "writing_part2"
+          ? store.swRecords.filter((r) => r.type === "writing_part2" || r.type === "writing")
+          : store.swRecords.filter((r) => r.type === filter);
     const needle = q.trim().toLowerCase();
     if (!needle) return base;
     return base.filter((r) => `${r.prompt}\n${r.myAnswer}\n${r.improvedAnswer}\n${r.notes ?? ""}`.toLowerCase().includes(needle));
@@ -2225,7 +2276,7 @@ function RecordsPanel({
     const id = store.addSwRecord({ type: rtype, prompt: prompt.trim(), notes: notes.trim() || undefined });
     setPrompt("");
     setNotes("");
-    setRtype("writing");
+    setRtype("writing_part2");
     setAddOpen(false);
     if (id) {
       setActiveId(id);
@@ -2244,10 +2295,19 @@ function RecordsPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {[
           { label: "總記錄", v: store.swRecords.length, c: "var(--ielts-accent)" },
-          { label: "Writing", v: store.swRecords.filter((r) => r.type === "writing").length, c: "var(--ielts-writing)" },
+          {
+            label: "Writing P1",
+            v: store.swRecords.filter((r) => r.type === "writing_part1").length,
+            c: "var(--ielts-writing)",
+          },
+          {
+            label: "Writing P2",
+            v: store.swRecords.filter((r) => r.type === "writing_part2" || r.type === "writing").length,
+            c: "var(--ielts-writing)",
+          },
           { label: "Speaking", v: store.swRecords.filter((r) => r.type === "speaking").length, c: "var(--ielts-speaking)" },
         ].map((x, i) => (
           <div key={x.label} className="ielts-card-static ielts-enter" style={{ padding: 14, textAlign: "center", animationDelay: `${i * 0.06}s` }}>
@@ -2268,19 +2328,12 @@ function RecordsPanel({
       </div>
 
       <div className="ielts-card-static" style={{ padding: 14 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          {(
-            [
-              { id: "all" as const, label: "全部" },
-              { id: "writing" as const, label: "Writing" },
-              { id: "speaking" as const, label: "Speaking" },
-            ] as const
-          ).map((p) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", width: "100%" }}>
             <button
-              key={p.id}
               type="button"
               className="ielts-btn"
-              onClick={() => setFilter(p.id)}
+              onClick={() => setFilter("all")}
               style={{
                 padding: "8px 14px",
                 borderRadius: 999,
@@ -2288,22 +2341,71 @@ function RecordsPanel({
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: "pointer",
-                background: filter === p.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
-                color: filter === p.id ? "#fff" : "var(--ielts-text-3)",
+                background: filter === "all" ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                color: filter === "all" ? "#fff" : "var(--ielts-text-3)",
                 transition: "all 0.2s ease",
+                flexShrink: 0,
               }}
             >
-              {p.label}
+              全部
             </button>
-          ))}
-          <div style={{ flex: 1, minWidth: 160 }} />
-          <input
-            className="ielts-input"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="搜尋題目／回答…"
-            style={{ width: "min(240px, 100%)" }}
-          />
+            <div style={{ flex: "1 1 80px", minWidth: 0 }} />
+            <input
+              className="ielts-input"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="搜尋題目／回答…"
+              style={{ width: "min(240px, 100%)", flex: "1 1 160px", minWidth: 0, boxSizing: "border-box" }}
+            />
+          </div>
+          <div
+            role="toolbar"
+            aria-label="寫作與口說類型"
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              flexWrap: "nowrap",
+              gap: 8,
+              alignItems: "center",
+              overflowX: "auto",
+              WebkitOverflowScrolling: "touch",
+              paddingBottom: 2,
+              marginLeft: -2,
+              marginRight: -2,
+              paddingLeft: 2,
+              paddingRight: 2,
+            }}
+          >
+            {(
+              [
+                { id: "writing_part1" as const, label: "Writing Part 1" },
+                { id: "writing_part2" as const, label: "Writing Part 2" },
+                { id: "speaking" as const, label: "Speaking" },
+              ] as const
+            ).map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="ielts-btn"
+                onClick={() => setFilter(p.id)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  background: filter === p.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                  color: filter === p.id ? "#fff" : "var(--ielts-text-3)",
+                  transition: "all 0.2s ease",
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -2332,14 +2434,14 @@ function RecordsPanel({
             }}
             style={{
               padding: 16,
-              borderLeft: `4px solid ${r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)"}`,
+              borderLeft: `4px solid ${isSwRecordWriting(r.type) ? "var(--ielts-writing)" : "var(--ielts-speaking)"}`,
               cursor: "pointer",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <span className="ielts-text-caption" style={{ fontWeight: 900, color: r.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}>
+                  <span className="ielts-text-caption" style={{ fontWeight: 900, color: isSwRecordWriting(r.type) ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}>
                     {recordTypeLabel(r.type)}
                   </span>
                   <span className="ielts-text-caption">· {r.updatedAt}</span>
@@ -2377,7 +2479,8 @@ function RecordsPanel({
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               類型
               <select className="ielts-input" value={rtype} onChange={(e) => setRtype(e.target.value as SpeakingWritingType)}>
-                <option value="writing">Writing</option>
+                <option value="writing_part1">Writing Part 1</option>
+                <option value="writing_part2">Writing Part 2</option>
                 <option value="speaking">Speaking</option>
               </select>
             </label>

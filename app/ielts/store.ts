@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IELTS_GOOGLE_AI_KEY_LS } from "./llm-key-storage";
 
 export type IELTSSection = "today" | "calendar" | "cards" | "records" | "scores" | "settings";
@@ -31,7 +31,12 @@ export type Flashcard = {
 };
 export type SkillType = "L" | "R" | "W" | "S";
 
-export type SpeakingWritingType = "writing" | "speaking";
+/** `writing` 為舊版單一寫作類型，統計與篩選時視同 Part 2 */
+export type SpeakingWritingType = "writing" | "writing_part1" | "writing_part2" | "speaking";
+
+export function isSwRecordWriting(t: SpeakingWritingType): boolean {
+  return t === "writing" || t === "writing_part1" || t === "writing_part2";
+}
 export type SpeakingWritingEntry = {
   id: string;
   type: SpeakingWritingType;
@@ -115,7 +120,11 @@ const KEY_SCORES = "ielts_scores";
 const KEY_WRONG = "ielts_wrong_questions";
 const KEY_POMO_SESSION = "ielts_pomodoro_session";
 const KEY_FLASHCARDS = "ielts_flashcards_v1";
+const KEY_FLASHCARD_REVIEW_QUEUE = "ielts_flashcard_review_queue_v1";
 export const IELTS_SW_RECORDS_KEY = "ielts_sw_records_v1";
+
+/** 字卡篩選「待複習」系列用，避免與自訂類別 id 衝突 */
+export const FLASHCARD_REVIEW_QUEUE_FILTER_ID = "__ielts_review_queue__";
 
 export const IELTS_STORAGE_KEYS = [
   KEY_VERSION,
@@ -127,6 +136,7 @@ export const IELTS_STORAGE_KEYS = [
   KEY_WRONG,
   KEY_POMO_SESSION,
   KEY_FLASHCARDS,
+  KEY_FLASHCARD_REVIEW_QUEUE,
   IELTS_SW_RECORDS_KEY,
 ] as const;
 
@@ -174,7 +184,14 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
     if (!r || typeof r !== "object") continue;
     const obj = r as Partial<Record<string, unknown>>;
     const id = typeof obj.id === "string" ? obj.id : null;
-    const type = obj.type === "writing" || obj.type === "speaking" ? obj.type : null;
+    const typeRaw = obj.type;
+    const type =
+      typeRaw === "writing" ||
+      typeRaw === "writing_part1" ||
+      typeRaw === "writing_part2" ||
+      typeRaw === "speaking"
+        ? typeRaw
+        : null;
     const prompt = typeof obj.prompt === "string" ? obj.prompt : null;
     const createdAt = typeof obj.createdAt === "string" ? obj.createdAt : todayIso();
     const updatedAt = typeof obj.updatedAt === "string" ? obj.updatedAt : createdAt;
@@ -307,6 +324,18 @@ export function flashcardCategoryLabel(categoryId: string, defs: FlashcardCatego
   return defs.find((d) => d.id === categoryId)?.label ?? categoryId;
 }
 
+function normalizeFlashcardReviewQueue(ids: unknown, validIds: Set<string>): string[] {
+  if (!Array.isArray(ids)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of ids) {
+    if (typeof x !== "string" || !x.trim() || !validIds.has(x) || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
+}
+
 /** Strip fields removed from Settings so old localStorage / backups still load. */
 function sanitizeSettingsRaw(raw: Record<string, unknown>): Record<string, unknown> {
   const { targetOverallBand: _removed, ...rest } = raw;
@@ -363,12 +392,16 @@ export function useIELTSStore() {
   /** Bumps on each tick while focus/break runs so remaining sec (from Date.now vs endAt) recomputes. */
   const [pomoDisplayTick, setPomoDisplayTick] = useState(0);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const flashcardsRef = useRef<Flashcard[]>([]);
+  flashcardsRef.current = flashcards;
+  const [flashcardReviewQueue, setFlashcardReviewQueue] = useState<string[]>([]);
   const [swRecords, setSwRecords] = useState<SpeakingWritingEntry[]>([]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     migrateIfNeeded();
     if (localStorage.getItem(KEY_FLASHCARDS) === null) lsSet(KEY_FLASHCARDS, []);
+    if (localStorage.getItem(KEY_FLASHCARD_REVIEW_QUEUE) === null) lsSet(KEY_FLASHCARD_REVIEW_QUEUE, []);
     if (localStorage.getItem(IELTS_SW_RECORDS_KEY) === null) lsSet(IELTS_SW_RECORDS_KEY, []);
     const rawSettings = lsGet<Record<string, unknown>>(KEY_SETTINGS);
     let mergedSettings: Settings = defaultSettings();
@@ -395,11 +428,12 @@ export function useIELTSStore() {
       breakMin: (lsGet<Settings>(KEY_SETTINGS) ?? defaultSettings()).pomodoroBreakMin,
       startedAt: null,
     });
-    setFlashcards(
-      dedupeFlashcardsById(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []).map((c) =>
-        validCat.has(c.category) ? c : { ...c, category: fallbackCat },
-      ),
+    const loadedCards = dedupeFlashcardsById(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []).map((c) =>
+      validCat.has(c.category) ? c : { ...c, category: fallbackCat },
     );
+    const validIds = new Set(loadedCards.map((c) => c.id));
+    setFlashcards(loadedCards);
+    setFlashcardReviewQueue(normalizeFlashcardReviewQueue(lsGet<unknown>(KEY_FLASHCARD_REVIEW_QUEUE), validIds));
     setSwRecords(migrateSwRecords(lsGet<unknown>(IELTS_SW_RECORDS_KEY) ?? []));
     setReady(true);
   }, []);
@@ -438,8 +472,21 @@ export function useIELTSStore() {
   }, [ready, flashcards]);
   useEffect(() => {
     if (!ready) return;
+    lsSet(KEY_FLASHCARD_REVIEW_QUEUE, flashcardReviewQueue);
+  }, [ready, flashcardReviewQueue]);
+  useEffect(() => {
+    if (!ready) return;
     lsSet(IELTS_SW_RECORDS_KEY, swRecords);
   }, [ready, swRecords]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const valid = new Set(flashcards.map((c) => c.id));
+    setFlashcardReviewQueue((prev) => {
+      const next = prev.filter((id) => valid.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [ready, flashcards]);
 
   const getDayPlan = useCallback((day: number): DayPlan => {
     const base = scheduleDefault.find((p) => p.day === day) ?? scheduleDefault[0];
@@ -654,6 +701,15 @@ export function useIELTSStore() {
 
   const removeFlashcard = useCallback((id: string) => {
     setFlashcards((prev) => prev.filter((c) => c.id !== id));
+    setFlashcardReviewQueue((prev) => prev.filter((x) => x !== id));
+  }, []);
+
+  const addFlashcardToReviewQueue = useCallback((id: string) => {
+    setFlashcardReviewQueue((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+
+  const removeFlashcardFromReviewQueue = useCallback((id: string) => {
+    setFlashcardReviewQueue((prev) => prev.filter((x) => x !== id));
   }, []);
 
   const toggleFlashcardMastered = useCallback((id: string) => {
@@ -797,6 +853,7 @@ export function useIELTSStore() {
     setScores([]);
     setWrongItems([]);
     setFlashcards([]);
+    setFlashcardReviewQueue([]);
     setSwRecords([]);
     setPomo({
       phase: "idle",
@@ -816,6 +873,7 @@ export function useIELTSStore() {
       lsSet(KEY_SCORES, []);
       lsSet(KEY_WRONG, []);
       lsSet(KEY_FLASHCARDS, []);
+      lsSet(KEY_FLASHCARD_REVIEW_QUEUE, []);
       lsSet(IELTS_SW_RECORDS_KEY, []);
       lsSet(KEY_POMO_SESSION, {
         phase: "idle",
@@ -842,16 +900,18 @@ export function useIELTSStore() {
       wrongItems,
       pomodoroSession: pomo,
       flashcards,
+      flashcardReviewQueue,
       swRecords,
       exportedAt: new Date().toISOString(),
     };
-  }, [completion, flashcards, notes, override, pomo, scores, settings, swRecords, wrongItems]);
+  }, [completion, flashcardReviewQueue, flashcards, notes, override, pomo, scores, settings, swRecords, wrongItems]);
 
   const importAll = useCallback((json: unknown) => {
     if (!json || typeof json !== "object") throw new Error("Invalid JSON");
     const raw = json as Record<string, unknown>;
     /** 僅把 `flashcards` 接到現有字卡最前（與新增字卡順序一致），不覆寫其他備份欄位 */
     const mergeFlashcards = raw.mergeFlashcards === true;
+    const queueFromImport = raw.flashcardReviewQueue;
     const obj = json as Partial<{
       settings: Settings;
       scheduleOverride: Overrides;
@@ -883,11 +943,24 @@ export function useIELTSStore() {
           const base = dedupeFlashcardsById(prev);
           const seen = new Set(base.map((x) => x.id));
           const add = incoming.filter((x) => !seen.has(x.id));
-          return [...add, ...base];
+          const merged = [...add, ...base];
+          if (queueFromImport !== undefined) {
+            queueMicrotask(() =>
+              setFlashcardReviewQueue(normalizeFlashcardReviewQueue(queueFromImport, new Set(merged.map((x) => x.id)))),
+            );
+          }
+          return merged;
         });
       } else {
         setFlashcards(incoming);
+        if (queueFromImport !== undefined) {
+          setFlashcardReviewQueue(normalizeFlashcardReviewQueue(queueFromImport, new Set(incoming.map((x) => x.id))));
+        }
       }
+    } else if (queueFromImport !== undefined) {
+      setFlashcardReviewQueue(
+        normalizeFlashcardReviewQueue(queueFromImport, new Set(flashcardsRef.current.map((c) => c.id))),
+      );
     }
     if (obj.swRecords) setSwRecords(obj.swRecords);
   }, []);
@@ -924,6 +997,9 @@ export function useIELTSStore() {
     pomoResume,
     pomoReset,
     flashcards,
+    flashcardReviewQueue,
+    addFlashcardToReviewQueue,
+    removeFlashcardFromReviewQueue,
     addFlashcard,
     removeFlashcard,
     toggleFlashcardMastered,

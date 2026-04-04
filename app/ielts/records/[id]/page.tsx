@@ -5,10 +5,18 @@ import { useParams } from "next/navigation";
 import type { MutableRefObject, RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IELTS_SW_RECORDS_KEY, migrateSwRecords, type SpeakingWritingEntry, type SpeakingWritingType } from "@/app/ielts/store";
+import {
+  IELTS_SW_RECORDS_KEY,
+  isSwRecordWriting,
+  migrateSwRecords,
+  type SpeakingWritingEntry,
+  type SpeakingWritingType,
+} from "@/app/ielts/store";
 
 function recordTypeLabel(t: SpeakingWritingType): string {
-  return t === "writing" ? "Writing" : "Speaking";
+  if (t === "writing_part1") return "Writing Part 1";
+  if (t === "writing_part2" || t === "writing") return "Writing Part 2";
+  return "Speaking";
 }
 
 function escapeHtml(s: string): string {
@@ -413,7 +421,10 @@ export default function IeltsRecordDetailPage() {
         <header className="ielts-card-static" style={{ padding: "14px 16px", marginBottom: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="ielts-text-caption" style={{ fontWeight: 900, color: rec?.type === "writing" ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}>
+              <div
+                className="ielts-text-caption"
+                style={{ fontWeight: 900, color: rec && isSwRecordWriting(rec.type) ? "var(--ielts-writing)" : "var(--ielts-speaking)" }}
+              >
                 {rec ? recordTypeLabel(rec.type) : "記錄"}
               </div>
               <div className="ielts-text-heading" style={{ marginTop: 8, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>

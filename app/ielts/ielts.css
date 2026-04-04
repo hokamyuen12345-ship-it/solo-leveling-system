@@ -444,18 +444,22 @@
   transform: translateX(20px);
 }
 
-/* 全屏字卡 3D 翻轉 */
+/* 測驗：反轉模式開關（開啟時與主題色一致） */
+.ielts-quiz-reverse-switch.ielts-toggle[data-on="true"] {
+  background: var(--ielts-accent);
+}
+
+/* 全屏字卡 3D 翻轉（grid 同格疊加：高度隨內容撐開，避免絕對定位裁切溢出） */
 .ielts-flip-scene {
   perspective: 1200px;
   width: 100%;
   max-width: 340px;
-  min-height: 220px;
   margin: 0 auto;
 }
 .ielts-flip-inner {
-  position: relative;
+  display: grid;
   width: 100%;
-  min-height: 220px;
+  min-height: 200px;
   transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
   transform-style: preserve-3d;
 }
@@ -463,8 +467,10 @@
   transform: rotateY(180deg);
 }
 .ielts-flip-face {
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   border-radius: 20px;
@@ -475,11 +481,18 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px 20px;
+  padding: 28px 20px 32px;
   text-align: center;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .ielts-flip-back {
   transform: rotateY(180deg);
+}
+
+/* 大字 line-height:1 易裁切上下筆畫；翻面卡內略放鬆 */
+.ielts-flip-face .ielts-text-hero {
+  line-height: 1.18;
 }
 
 /* 輸入 */
