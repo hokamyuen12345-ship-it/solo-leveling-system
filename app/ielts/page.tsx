@@ -1584,8 +1584,8 @@ function CardsPanel({
 
   const saveEdit = () => {
     if (!editingCard) return;
-    if (!eword.trim() || !emeaning.trim()) {
-      window.alert("請填寫單字與解釋。");
+    if (!eword.trim()) {
+      window.alert("請填寫單字或片語。");
       return;
     }
     store.updateFlashcard(editingCard.id, {

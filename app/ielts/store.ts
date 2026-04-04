@@ -37,6 +37,130 @@ export type SpeakingWritingType = "writing" | "writing_part1" | "writing_part2" 
 export function isSwRecordWriting(t: SpeakingWritingType): boolean {
   return t === "writing" || t === "writing_part1" || t === "writing_part2";
 }
+
+function looksLikeReadingFlashcardCategory(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  const labLo = lab.toLowerCase();
+  if (id === "reading" || /\breading\b/.test(id)) return true;
+  // 繁體 閱讀、簡體 阅读（舊版只比對「閱讀」會漏掉簡體，導致仍留在 pool 變成 pool[0]）
+  if (/閱讀|阅读/.test(lab)) return true;
+  if (labLo === "reading" || /\breading\b/i.test(lab)) return true;
+  return false;
+}
+
+function looksLikeSpeakingFlashcardCategory(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  if (id === "speaking") return true;
+  if (/\b(speaking|spoken)\b/.test(id) || /_speak|speak_/.test(id)) return true;
+  return /口說|口语|口語|說話|Speaking|SPEAKING|IELTS\s*S\b|Oral/i.test(lab);
+}
+
+function looksLikeWritingFlashcardCategory(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  if (id === "writing") return true;
+  if (/\bwriting\b/.test(id)) return true;
+  return /寫作|写作|Writing|WRITING/i.test(lab);
+}
+
+function pickSpeakingCategoryId(categories: FlashcardCategoryDef[]): FlashcardCategory | null {
+  const byId = categories.find((c) => c.id === "speaking");
+  if (byId) return byId.id;
+  const hit = categories.find(looksLikeSpeakingFlashcardCategory);
+  return hit?.id ?? null;
+}
+
+function pickWritingCategoryId(categories: FlashcardCategoryDef[]): FlashcardCategory | null {
+  const byId = categories.find((c) => c.id === "writing");
+  if (byId) return byId.id;
+  const hit = categories.find(looksLikeWritingFlashcardCategory);
+  return hit?.id ?? null;
+}
+
+/**
+ * 口說記錄 → 口說字卡類；寫作 → 寫作類。
+ * 自訂類別 id 若與預設不同，會依標籤（含簡體「阅读」）辨識，避免誤入閱讀。
+ */
+export function flashcardCategoryIdForSwRecord(
+  categories: FlashcardCategoryDef[],
+  type: SpeakingWritingType,
+): FlashcardCategory {
+  if (categories.length === 0) return "vocab";
+
+  if (type === "speaking") {
+    const direct = pickSpeakingCategoryId(categories);
+    if (direct) return direct;
+    const nonRead = categories.filter((c) => !looksLikeReadingFlashcardCategory(c));
+    const fromPool = pickSpeakingCategoryId(nonRead);
+    if (fromPool) return fromPool;
+    return (nonRead[0] ?? categories[0]).id;
+  }
+
+  if (isSwRecordWriting(type)) {
+    const direct = pickWritingCategoryId(categories);
+    if (direct) return direct;
+    const nonRead = categories.filter((c) => !looksLikeReadingFlashcardCategory(c));
+    const fromPool = pickWritingCategoryId(nonRead);
+    if (fromPool) return fromPool;
+    return (nonRead[0] ?? categories[0]).id;
+  }
+
+  return categories[0].id;
+}
+
+/**
+ * 將 localStorage／舊版寫入的 category id 對齊到目前 `flashcardCategories` 裡實際存在的 id。
+ * 避免「speaking」等預設 id 在使用者自訂類別後不存在，載入時被誤改成第一個類別（常為閱讀）。
+ */
+function coerceFlashcardCategoryId(categories: FlashcardCategoryDef[], stored: string): string {
+  if (categories.length === 0) return "vocab";
+  const valid = new Set(categories.map((c) => c.id));
+  if (valid.has(stored)) return stored;
+
+  const lo = stored.trim().toLowerCase();
+
+  if (lo === "speaking" || lo === "spoken") {
+    return pickSpeakingCategoryId(categories) ?? categories[0].id;
+  }
+  if (lo === "writing") {
+    return pickWritingCategoryId(categories) ?? categories[0].id;
+  }
+  if (lo === "reading") {
+    const hit = categories.find(looksLikeReadingFlashcardCategory);
+    return hit?.id ?? categories[0].id;
+  }
+  if (lo === "vocab") {
+    const hit = categories.find((c) => c.id === "vocab" || /詞彙|词汇/i.test(c.label));
+    return hit?.id ?? categories[0].id;
+  }
+  if (lo === "grammar") {
+    const hit = categories.find(
+      (c) => c.id.toLowerCase() === "grammar" || /語法|语法|grammar/i.test(c.label),
+    );
+    return hit?.id ?? categories[0].id;
+  }
+
+  return categories[0].id;
+}
+
+/** 從答案標記字串（!!…!! 紅標）取出不重複片語，空白正規化 */
+export function extractRedSegmentsFromAnswerMarkup(s: string): string[] {
+  const re = /!!([\s\S]*?)!!/g;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    const t = (m[1] ?? "").replace(/\s+/g, " ").trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+  }
+  return out;
+}
 export type SpeakingWritingEntry = {
   id: string;
   type: SpeakingWritingType;
@@ -185,12 +309,10 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
     const obj = r as Partial<Record<string, unknown>>;
     const id = typeof obj.id === "string" ? obj.id : null;
     const typeRaw = obj.type;
+    const tr = typeof typeRaw === "string" ? typeRaw.trim().toLowerCase() : "";
     const type =
-      typeRaw === "writing" ||
-      typeRaw === "writing_part1" ||
-      typeRaw === "writing_part2" ||
-      typeRaw === "speaking"
-        ? typeRaw
+      tr === "writing" || tr === "writing_part1" || tr === "writing_part2" || tr === "speaking"
+        ? (tr as SpeakingWritingType)
         : null;
     const prompt = typeof obj.prompt === "string" ? obj.prompt : null;
     const createdAt = typeof obj.createdAt === "string" ? obj.createdAt : todayIso();
@@ -413,7 +535,6 @@ export function useIELTSStore() {
     }
     setSettings(mergedSettings);
     const validCat = new Set(mergedSettings.flashcardCategories.map((c) => c.id));
-    const fallbackCat = mergedSettings.flashcardCategories[0]?.id ?? "vocab";
     setOverride(lsGet<Overrides>(KEY_OVERRIDE) ?? {});
     setCompletion(lsGet<Completion>(KEY_COMPLETION) ?? {});
     setNotes(lsGet<Notes>(KEY_NOTES) ?? {});
@@ -429,7 +550,9 @@ export function useIELTSStore() {
       startedAt: null,
     });
     const loadedCards = dedupeFlashcardsById(lsGet<Flashcard[]>(KEY_FLASHCARDS) ?? []).map((c) =>
-      validCat.has(c.category) ? c : { ...c, category: fallbackCat },
+      validCat.has(c.category)
+        ? c
+        : { ...c, category: coerceFlashcardCategoryId(mergedSettings.flashcardCategories, c.category) },
     );
     const validIds = new Set(loadedCards.map((c) => c.id));
     setFlashcards(loadedCards);
@@ -686,18 +809,25 @@ export function useIELTSStore() {
     });
   }, [settings.pomodoroBreakMin, settings.pomodoroFocusMin]);
 
-  const addFlashcard = useCallback((item: Omit<Flashcard, "id" | "createdAt" | "mastered">) => {
-    const iso = todayIso();
-    setFlashcards((prev) => [
-      {
-        ...item,
-        id: crypto.randomUUID(),
-        createdAt: iso,
-        mastered: false,
-      },
-      ...prev,
-    ]);
-  }, []);
+  const addFlashcard = useCallback(
+    (item: Omit<Flashcard, "id" | "createdAt" | "mastered">) => {
+      const cats = settings.flashcardCategories;
+      const valid = new Set(cats.map((c) => c.id));
+      const category = valid.has(item.category) ? item.category : coerceFlashcardCategoryId(cats, item.category);
+      const iso = todayIso();
+      setFlashcards((prev) => [
+        {
+          ...item,
+          category,
+          id: crypto.randomUUID(),
+          createdAt: iso,
+          mastered: false,
+        },
+        ...prev,
+      ]);
+    },
+    [settings.flashcardCategories],
+  );
 
   const removeFlashcard = useCallback((id: string) => {
     setFlashcards((prev) => prev.filter((c) => c.id !== id));
@@ -726,8 +856,8 @@ export function useIELTSStore() {
       data: Pick<Flashcard, "word" | "meaning" | "category" | "mastered"> & { example?: string },
     ) => {
       const word = data.word.trim();
+      if (!word) return;
       const meaning = data.meaning.trim();
-      if (!word || !meaning) return;
       const example = data.example?.trim() ? data.example.trim() : undefined;
       setFlashcards((prev) =>
         prev.map((c) =>

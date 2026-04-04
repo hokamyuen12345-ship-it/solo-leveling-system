@@ -264,6 +264,11 @@
   animation: ielts-pulse-border 1.6s ease-in-out infinite;
 }
 
+/* 記錄詳情浮動標色工具列：僅繼承代幣，不可沿用全頁 min-height:100dvh */
+.ielts-root.ielts-highlight-toolbar-float {
+  min-height: 0;
+}
+
 .ielts-btn:active {
   transform: scale(0.96);
   transition: transform 0.1s ease;

@@ -6,9 +6,11 @@ import type { MutableRefObject, RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  flashcardCategoryIdForSwRecord,
   IELTS_SW_RECORDS_KEY,
   isSwRecordWriting,
   migrateSwRecords,
+  useIELTSStore,
   type SpeakingWritingEntry,
   type SpeakingWritingType,
 } from "@/app/ielts/store";
@@ -85,27 +87,156 @@ function serializeHighlightRoot(root: HTMLElement): string {
 
 type HighlightColor = "blue" | "yellow" | "red";
 
-function wrapHighlightContentEditable(root: HTMLElement | null, color: HighlightColor): void {
+const HIGHLIGHT_BUTTON_SPECS = [
+  { color: "blue" as const, label: "藍色", border: "rgba(47,111,237,0.85)", bg: "rgba(47,111,237,0.08)" },
+  { color: "yellow" as const, label: "黃色", border: "rgba(180,130,0,0.9)", bg: "rgba(234,179,8,0.14)" },
+  { color: "red" as const, label: "紅色", border: "rgba(220,70,70,0.95)", bg: "rgba(239,68,68,0.1)" },
+] as const;
+
+function highlightClassForColor(color: HighlightColor): string {
+  return `ielts-hl-${color}`;
+}
+
+/**
+ * 與 CSS 一致：藍色可為 .ielts-hl-blue，或僅 .ielts-hl-inline（舊資料、無黃／紅 class 時視為藍）。
+ */
+function markHasHighlightColor(mark: HTMLElement, color: HighlightColor): boolean {
+  if (color === "yellow") return mark.classList.contains("ielts-hl-yellow");
+  if (color === "red") return mark.classList.contains("ielts-hl-red");
+  return (
+    mark.classList.contains("ielts-hl-blue") ||
+    (!mark.classList.contains("ielts-hl-yellow") && !mark.classList.contains("ielts-hl-red"))
+  );
+}
+
+/** 自 root 往上找最近的標色 <mark> */
+function enclosingHighlightMark(node: Node | null, root: HTMLElement): HTMLElement | null {
+  let n: Node | null = node;
+  while (n && n !== root) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as HTMLElement;
+      if (el.tagName === "MARK" && el.classList.contains("ielts-hl-inline")) return el;
+    }
+    n = n.parentNode;
+  }
+  return null;
+}
+
+function pruneEmptyHighlightMarks(root: HTMLElement): void {
+  for (const m of [...root.querySelectorAll("mark.ielts-hl-inline")]) {
+    if (m.childNodes.length === 0) m.remove();
+  }
+}
+
+function rangeMatchesElementContents(range: Range, el: HTMLElement): boolean {
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  return (
+    range.compareBoundaryPoints(Range.START_TO_START, r) === 0 && range.compareBoundaryPoints(Range.END_TO_END, r) === 0
+  );
+}
+
+/** 部分 WebKit 選取邊界與 selectNodeContents 不完全一致時，用字串比對整段 mark 內文 */
+function rangeCoversEntireMarkText(range: Range, mark: HTMLElement): boolean {
+  const inner = document.createRange();
+  inner.selectNodeContents(mark);
+  const a = range.toString();
+  const b = inner.toString();
+  return a.length > 0 && a === b;
+}
+
+function restoreSelectionAroundNodes(sel: Selection, first: ChildNode | null, last: ChildNode | null): void {
+  if (!first || !last) return;
+  sel.removeAllRanges();
+  const nr = document.createRange();
+  try {
+    if (first === last && first.nodeType === Node.TEXT_NODE) {
+      const t = first as Text;
+      nr.setStart(t, 0);
+      nr.setEnd(t, t.length);
+    } else {
+      nr.setStartBefore(first);
+      nr.setEndAfter(last);
+    }
+    sel.addRange(nr);
+  } catch {
+    /* */
+  }
+}
+
+/**
+ * 若選取完全落在「同一顆」且與點選顏色相同的 <mark> 內，則取消該段標色（再點同色即還原為一般文字）。
+ * 否則為該選取套上該色標記。
+ * syncFromDom：變更後必須同步寫入 React state，否則 useLayoutEffect 會用舊 value 覆蓋 DOM（僅 dispatch input 在 React 18 常不可靠）。
+ * onRedWrapped：僅在「新套上」紅色標記成功後呼叫，傳入純文字（供加入字卡）。
+ */
+function wrapHighlightContentEditable(
+  root: HTMLElement | null,
+  color: HighlightColor,
+  syncFromDom: (serialized: string) => void,
+  options?: { onRedWrapped?: (plainText: string) => void },
+): void {
   if (!root) return;
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
   if (!root.contains(sel.anchorNode) || !root.contains(sel.focusNode)) return;
   const range = sel.getRangeAt(0);
   if (range.collapsed) return;
+
+  const cls = highlightClassForColor(color);
+  const markStart = enclosingHighlightMark(range.startContainer, root);
+  const markEnd = enclosingHighlightMark(range.endContainer, root);
+
   try {
-    const mark = document.createElement("mark");
-    mark.className = `ielts-hl-inline ielts-hl-${color}`;
-    const frag = range.extractContents();
-    mark.appendChild(frag);
-    range.insertNode(mark);
-    sel.removeAllRanges();
-    const nr = document.createRange();
-    nr.selectNodeContents(mark);
-    nr.collapse(false);
-    sel.addRange(nr);
+    if (
+      markStart &&
+      markStart === markEnd &&
+      markHasHighlightColor(markStart, color) &&
+      markStart.contains(range.startContainer) &&
+      markStart.contains(range.endContainer)
+    ) {
+      if (rangeMatchesElementContents(range, markStart) || rangeCoversEntireMarkText(range, markStart)) {
+        const parent = markStart.parentNode;
+        if (parent) {
+          const first = markStart.firstChild;
+          const last = markStart.lastChild;
+          while (markStart.firstChild) parent.insertBefore(markStart.firstChild, markStart);
+          parent.removeChild(markStart);
+          restoreSelectionAroundNodes(sel, first, last);
+        }
+      } else {
+        const r = range.cloneRange();
+        const frag = r.extractContents();
+        const first = frag.firstChild;
+        const last = frag.lastChild;
+        r.insertNode(frag);
+        restoreSelectionAroundNodes(sel, first, last);
+      }
+      pruneEmptyHighlightMarks(root);
+      root.normalize();
+    } else {
+      const mark = document.createElement("mark");
+      mark.className = `ielts-hl-inline ${cls}`;
+      const frag = range.extractContents();
+      mark.appendChild(frag);
+      range.insertNode(mark);
+      sel.removeAllRanges();
+      const nr = document.createRange();
+      nr.selectNodeContents(mark);
+      nr.collapse(false);
+      sel.addRange(nr);
+      if (color === "red") {
+        const plain = mark.textContent?.replace(/\s+/g, " ").trim() ?? "";
+        if (plain) options?.onRedWrapped?.(plain);
+      }
+    }
   } catch {
     /* 選取跨越不可切節點時略過 */
   }
+
+  const serialized = serializeHighlightRoot(root);
+  syncFromDom(serialized);
+  root.setAttribute("data-empty", serialized ? "false" : "true");
   root.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
@@ -118,12 +249,14 @@ function HighlightEditor({
   placeholder,
   editorRef,
   topMargin = 10,
+  onFocusChange,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   editorRef: RefObject<HTMLDivElement | null> | MutableRefObject<HTMLDivElement | null>;
   topMargin?: number;
+  onFocusChange?: (focused: boolean) => void;
 }) {
   const flushFromDom = useCallback(() => {
     const el = editorRef.current;
@@ -160,6 +293,8 @@ function HighlightEditor({
         fontFamily: "inherit",
       }}
       onInput={flushFromDom}
+      onFocus={() => onFocusChange?.(true)}
+      onBlur={() => onFocusChange?.(false)}
       onPaste={(e) => {
         e.preventDefault();
         const t = e.clipboardData.getData("text/plain");
@@ -255,6 +390,8 @@ export default function IeltsRecordDetailPage() {
   const [improvedAns, setImprovedAns] = useState("");
   const [attachmentImageDataUrl, setAttachmentImageDataUrl] = useState<string | undefined>(undefined);
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
+  const [answerEditorFocused, setAnswerEditorFocused] = useState(false);
+  const [hlToolbarBottomPx, setHlToolbarBottomPx] = useState(0);
 
   const myRef = useRef<HTMLDivElement | null>(null);
   const improvedRef = useRef<HTMLDivElement | null>(null);
@@ -268,6 +405,85 @@ export default function IeltsRecordDetailPage() {
     img: undefined as string | undefined,
   });
   const skipAutoSaveUntilHydratedRef = useRef<string | null>(null);
+  const answerBlurTimerRef = useRef<number | null>(null);
+
+  const { ready: ieltsReady, settings, flashcards, addFlashcard } = useIELTSStore();
+
+  const runHighlight = useCallback(
+    (color: HighlightColor, refocusEditor?: boolean) => {
+      const el = mode === "my" ? myRef.current : improvedRef.current;
+      if (!el) return;
+      const sync = (serialized: string) => {
+        if (mode === "my") setMyAns(serialized);
+        else setImprovedAns(serialized);
+      };
+      const redOpts =
+        color === "red" && rec && ieltsReady
+          ? {
+              onRedWrapped: (plain: string) => {
+                if (!rec) return;
+                const cat = flashcardCategoryIdForSwRecord(settings.flashcardCategories, rec.type);
+                const word = plain.replace(/\s+/g, " ").trim();
+                if (!word) return;
+                const low = word.toLowerCase();
+                if (flashcards.some((c) => c.category === cat && c.word.trim().toLowerCase() === low)) return;
+                addFlashcard({ word, meaning: "", category: cat, example: undefined });
+              },
+            }
+          : undefined;
+      wrapHighlightContentEditable(el, color, sync, redOpts);
+      if (refocusEditor) el.focus();
+    },
+    [mode, rec, ieltsReady, settings.flashcardCategories, flashcards, addFlashcard],
+  );
+
+  const onAnswerFocusChange = useCallback((focused: boolean) => {
+    if (focused) {
+      if (answerBlurTimerRef.current) {
+        clearTimeout(answerBlurTimerRef.current);
+        answerBlurTimerRef.current = null;
+      }
+      setAnswerEditorFocused(true);
+      return;
+    }
+    answerBlurTimerRef.current = window.setTimeout(() => {
+      setAnswerEditorFocused(false);
+      answerBlurTimerRef.current = null;
+    }, 200);
+  }, []);
+
+  const cancelAnswerBlurTimer = useCallback(() => {
+    if (answerBlurTimerRef.current) {
+      clearTimeout(answerBlurTimerRef.current);
+      answerBlurTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (answerBlurTimerRef.current) clearTimeout(answerBlurTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!answerEditorFocused || typeof window === "undefined") {
+      setHlToolbarBottomPx(0);
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const obscured = window.innerHeight - (vv.offsetTop + vv.height);
+      setHlToolbarBottomPx(Math.max(0, Math.round(obscured)));
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [answerEditorFocused]);
 
   useEffect(() => {
     setLoaded(true);
@@ -498,39 +714,6 @@ export default function IeltsRecordDetailPage() {
               </button>
             </div>
 
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-              {(
-                [
-                  { color: "blue" as const, label: "藍色", border: "rgba(47,111,237,0.85)", bg: "rgba(47,111,237,0.08)" },
-                  { color: "yellow" as const, label: "黃色", border: "rgba(180,130,0,0.9)", bg: "rgba(234,179,8,0.14)" },
-                  { color: "red" as const, label: "紅色", border: "rgba(220,70,70,0.95)", bg: "rgba(239,68,68,0.1)" },
-                ] as const
-              ).map(({ color, label, border, bg }) => (
-                <button
-                  key={color}
-                  type="button"
-                  className="ielts-btn"
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: `2px solid ${border}`,
-                    background: bg,
-                    color: "var(--ielts-text-1)",
-                    fontWeight: 800,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    const el = mode === "my" ? myRef.current : improvedRef.current;
-                    wrapHighlightContentEditable(el, color);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
             <div style={{ marginTop: 14 }}>
               <input
                 ref={attachmentInputRef}
@@ -651,6 +834,7 @@ export default function IeltsRecordDetailPage() {
                   placeholder="在這裡寫「我的答案」…"
                   editorRef={myRef}
                   topMargin={0}
+                  onFocusChange={onAnswerFocusChange}
                 />
               ) : (
                 <HighlightEditor
@@ -659,6 +843,7 @@ export default function IeltsRecordDetailPage() {
                   placeholder="在這裡寫「進階版本」…"
                   editorRef={improvedRef}
                   topMargin={0}
+                  onFocusChange={onAnswerFocusChange}
                 />
               )}
             </div>
@@ -671,6 +856,66 @@ export default function IeltsRecordDetailPage() {
           </div>
         )}
       </main>
+      {typeof document !== "undefined" &&
+        answerEditorFocused &&
+        rec &&
+        createPortal(
+          <div
+            className="ielts-root ielts-highlight-toolbar-float"
+            role="toolbar"
+            aria-label="標示選取文字顏色"
+            style={{
+              position: "fixed",
+              left: 0,
+              right: 0,
+              bottom: hlToolbarBottomPx,
+              zIndex: 9990,
+              boxSizing: "border-box",
+              /* 覆蓋 .ielts-root 的 min-height:100dvh，否則 flex 子項會被拉成滿版直條 */
+              minHeight: "unset",
+              height: "auto",
+              padding: "10px 12px calc(10px + env(safe-area-inset-bottom, 0px))",
+              background: "var(--ielts-bg-surface)",
+              borderTop: "1px solid var(--ielts-border-light)",
+              boxShadow: "0 -8px 28px rgba(0,0,0,0.1)",
+              display: "flex",
+              flexDirection: "row",
+              justifyContent: "center",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+            onMouseDown={cancelAnswerBlurTimer}
+          >
+            {HIGHLIGHT_BUTTON_SPECS.map(({ color, label, border, bg }) => (
+              <button
+                key={color}
+                type="button"
+                className="ielts-btn"
+                style={{
+                  flex: "0 0 auto",
+                  alignSelf: "center",
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: `2px solid ${border}`,
+                  background: bg,
+                  color: "var(--ielts-text-1)",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  cancelAnswerBlurTimer();
+                }}
+                onClick={() => runHighlight(color, true)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
       {typeof document !== "undefined" &&
         imageLightboxOpen &&
         attachmentImageDataUrl &&
