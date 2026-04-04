@@ -1413,21 +1413,11 @@ function ProgressPanel({
   );
 }
 
-const CATEGORY_BORDER_PALETTE = [
-  "var(--ielts-accent)",
-  "var(--ielts-writing)",
-  "var(--ielts-speaking)",
-  "var(--ielts-reading)",
-  "#8b5cf6",
-  "#ea580c",
-  "#0d9488",
-  "#db2777",
-];
-
-function categoryBorderColor(categoryId: string, defs: FlashcardCategoryDef[]): string {
-  const i = defs.findIndex((d) => d.id === categoryId);
-  if (i < 0) return "var(--ielts-accent)";
-  return CATEGORY_BORDER_PALETTE[i % CATEGORY_BORDER_PALETTE.length]!;
+/** 字卡列表左框：與上方統計色一致——待複習清單（紫）優先，其次已掌握（綠）、未掌握（黃） */
+function flashcardListBorderColor(cardId: string, mastered: boolean, reviewQueueIds: Set<string>): string {
+  if (reviewQueueIds.has(cardId)) return "var(--ielts-speaking)";
+  if (mastered) return "var(--ielts-success)";
+  return "var(--ielts-warning)";
 }
 
 function CardsPanel({
@@ -1519,6 +1509,8 @@ function CardsPanel({
     }
     return store.flashcards.filter((c) => c.category === displayFilter);
   }, [store.flashcardReviewQueue, store.flashcards, displayFilter]);
+
+  const reviewQueueIdSet = useMemo(() => new Set(store.flashcardReviewQueue), [store.flashcardReviewQueue]);
 
   const total = store.flashcards.length;
   const masteredN = store.flashcards.filter((c) => c.mastered).length;
@@ -2099,7 +2091,9 @@ function CardsPanel({
               display: "flex",
               alignItems: "flex-start",
               gap: 12,
-              borderLeft: `4px solid ${categoryBorderColor(c.category, cats)}`,
+              borderLeftWidth: 4,
+              borderLeftStyle: "solid",
+              borderLeftColor: flashcardListBorderColor(c.id, c.mastered, reviewQueueIdSet),
               paddingLeft: 16,
             }}
           >
