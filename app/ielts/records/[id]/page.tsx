@@ -128,6 +128,58 @@ function pruneEmptyHighlightMarks(root: HTMLElement): void {
   }
 }
 
+/** 跨越多段既有標色時 extractContents 會把 <mark> 包進新 mark，造成巢狀與 WebKit 選取異常；先展開成純文字／<br> */
+function unwrapAllHighlightMarksInContainer(container: DocumentFragment | HTMLElement): void {
+  let el: Element | null;
+  while ((el = container.querySelector("mark.ielts-hl-inline"))) {
+    const mark = el as HTMLElement;
+    const parent = mark.parentNode;
+    if (!parent) break;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+  }
+}
+
+function marksSameHighlightStyle(a: HTMLElement, b: HTMLElement): boolean {
+  const y = a.classList.contains("ielts-hl-yellow");
+  const yr = b.classList.contains("ielts-hl-yellow");
+  const r = a.classList.contains("ielts-hl-red");
+  const rr = b.classList.contains("ielts-hl-red");
+  if (y !== yr || r !== rr) return false;
+  if (y || r) return true;
+  const ab = a.classList.contains("ielts-hl-blue");
+  const bb = b.classList.contains("ielts-hl-blue");
+  return ab === bb;
+}
+
+/** 合併同式樣相鄰 <mark>，減少碎片 DOM、降低 iOS 選取失敗（多輪以處理 A+B+C 連鏈） */
+function mergeAdjacentSameColorMarks(root: HTMLElement): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const marks = [...root.querySelectorAll("mark.ielts-hl-inline")] as HTMLElement[];
+    for (const mark of marks) {
+      if (!mark.parentNode || !root.contains(mark)) continue;
+      let sib = mark.nextSibling;
+      while (
+        sib &&
+        sib.nodeType === Node.ELEMENT_NODE &&
+        (sib as HTMLElement).tagName === "MARK" &&
+        (sib as HTMLElement).classList.contains("ielts-hl-inline") &&
+        marksSameHighlightStyle(mark, sib as HTMLElement)
+      ) {
+        const sibEl = sib as HTMLElement;
+        const next = sibEl.nextSibling;
+        let ch: ChildNode | null;
+        while ((ch = sibEl.firstChild)) mark.appendChild(ch);
+        sibEl.remove();
+        sib = next;
+        changed = true;
+      }
+    }
+  }
+}
+
 function rangeMatchesElementContents(range: Range, el: HTMLElement): boolean {
   const r = document.createRange();
   r.selectNodeContents(el);
@@ -164,25 +216,54 @@ function restoreSelectionAroundNodes(sel: Selection, first: ChildNode | null, la
   }
 }
 
+function resolveHighlightRange(
+  root: HTMLElement,
+  saved: Range | null | undefined,
+): Range | null {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0) {
+    const r = sel.getRangeAt(0);
+    if (
+      !r.collapsed &&
+      root.contains(r.startContainer) &&
+      root.contains(r.endContainer)
+    ) {
+      return r.cloneRange();
+    }
+  }
+  if (saved && !saved.collapsed) {
+    try {
+      const c = saved.cloneRange();
+      if (root.contains(c.startContainer) && root.contains(c.endContainer)) return c;
+    } catch {
+      /* detached */
+    }
+  }
+  return null;
+}
+
 /**
  * 若選取完全落在「同一顆」且與點選顏色相同的 <mark> 內，則取消該段標色（再點同色即還原為一般文字）。
  * 否則為該選取套上該色標記。
  * syncFromDom：變更後必須同步寫入 React state，否則 useLayoutEffect 會用舊 value 覆蓋 DOM（僅 dispatch input 在 React 18 常不可靠）。
  * onRedWrapped：僅在「新套上」紅色標記成功後呼叫，傳入純文字（供加入字卡）。
+ * savedSelectionRange：iOS 等環境點工具列時選取常被清掉，可傳入 selectionchange 備份的 Range。
  */
 function wrapHighlightContentEditable(
   root: HTMLElement | null,
   color: HighlightColor,
   syncFromDom: (serialized: string) => void,
-  options?: { onRedWrapped?: (plainText: string) => void },
+  options?: {
+    onRedWrapped?: (plainText: string) => void;
+    savedSelectionRange?: Range | null;
+    clearSavedSelection?: () => void;
+  },
 ): void {
   if (!root) return;
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-  if (!root.contains(sel.anchorNode) || !root.contains(sel.focusNode)) return;
-  const range = sel.getRangeAt(0);
-  if (range.collapsed) return;
+  const range = resolveHighlightRange(root, options?.savedSelectionRange ?? null);
+  if (!range || range.collapsed) return;
 
+  const sel = window.getSelection();
   const cls = highlightClassForColor(color);
   const markStart = enclosingHighlightMark(range.startContainer, root);
   const markEnd = enclosingHighlightMark(range.endContainer, root);
@@ -202,33 +283,43 @@ function wrapHighlightContentEditable(
           const last = markStart.lastChild;
           while (markStart.firstChild) parent.insertBefore(markStart.firstChild, markStart);
           parent.removeChild(markStart);
-          restoreSelectionAroundNodes(sel, first, last);
+          if (sel) restoreSelectionAroundNodes(sel, first, last);
         }
       } else {
         const r = range.cloneRange();
         const frag = r.extractContents();
+        unwrapAllHighlightMarksInContainer(frag);
         const first = frag.firstChild;
         const last = frag.lastChild;
         r.insertNode(frag);
-        restoreSelectionAroundNodes(sel, first, last);
+        if (sel) restoreSelectionAroundNodes(sel, first, last);
       }
       pruneEmptyHighlightMarks(root);
+      mergeAdjacentSameColorMarks(root);
       root.normalize();
+      options?.clearSavedSelection?.();
     } else {
       const mark = document.createElement("mark");
       mark.className = `ielts-hl-inline ${cls}`;
       const frag = range.extractContents();
+      unwrapAllHighlightMarksInContainer(frag);
       mark.appendChild(frag);
       range.insertNode(mark);
-      sel.removeAllRanges();
-      const nr = document.createRange();
-      nr.selectNodeContents(mark);
-      nr.collapse(false);
-      sel.addRange(nr);
+      if (sel) {
+        sel.removeAllRanges();
+        const nr = document.createRange();
+        nr.selectNodeContents(mark);
+        nr.collapse(false);
+        sel.addRange(nr);
+      }
       if (color === "red") {
         const plain = mark.textContent?.replace(/\s+/g, " ").trim() ?? "";
         if (plain) options?.onRedWrapped?.(plain);
       }
+      pruneEmptyHighlightMarks(root);
+      mergeAdjacentSameColorMarks(root);
+      root.normalize();
+      options?.clearSavedSelection?.();
     }
   } catch {
     /* 選取跨越不可切節點時略過 */
@@ -406,8 +497,34 @@ export default function IeltsRecordDetailPage() {
   });
   const skipAutoSaveUntilHydratedRef = useRef<string | null>(null);
   const answerBlurTimerRef = useRef<number | null>(null);
+  /** iOS：點顏色按鈕時 contenteditable 常先失焦並清空 getSelection，改以 selectionchange 備份還原 */
+  const savedHighlightRangeRef = useRef<Range | null>(null);
 
   const { ready: ieltsReady, settings, flashcards, addFlashcard } = useIELTSStore();
+
+  useEffect(() => {
+    if (!answerEditorFocused) {
+      savedHighlightRangeRef.current = null;
+      return;
+    }
+    const ed = mode === "my" ? myRef.current : improvedRef.current;
+    if (!ed) return;
+
+    const onSelectionChange = () => {
+      const s = window.getSelection();
+      if (!s || s.rangeCount === 0) return;
+      const r = s.getRangeAt(0);
+      if (r.collapsed) return;
+      if (!ed.contains(r.startContainer) || !ed.contains(r.endContainer)) return;
+      try {
+        savedHighlightRangeRef.current = r.cloneRange();
+      } catch {
+        /* */
+      }
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
+  }, [answerEditorFocused, mode]);
 
   const runHighlight = useCallback(
     (color: HighlightColor, refocusEditor?: boolean) => {
@@ -417,21 +534,24 @@ export default function IeltsRecordDetailPage() {
         if (mode === "my") setMyAns(serialized);
         else setImprovedAns(serialized);
       };
-      const redOpts =
-        color === "red" && rec && ieltsReady
-          ? {
-              onRedWrapped: (plain: string) => {
-                if (!rec) return;
-                const cat = flashcardCategoryIdForSwRecord(settings.flashcardCategories, rec.type);
-                const word = plain.replace(/\s+/g, " ").trim();
-                if (!word) return;
-                const low = word.toLowerCase();
-                if (flashcards.some((c) => c.category === cat && c.word.trim().toLowerCase() === low)) return;
-                addFlashcard({ word, meaning: "", category: cat, example: undefined });
-              },
-            }
-          : undefined;
-      wrapHighlightContentEditable(el, color, sync, redOpts);
+      const wrapOpts: Parameters<typeof wrapHighlightContentEditable>[3] = {
+        savedSelectionRange: savedHighlightRangeRef.current,
+        clearSavedSelection: () => {
+          savedHighlightRangeRef.current = null;
+        },
+      };
+      if (color === "red" && rec && ieltsReady) {
+        wrapOpts.onRedWrapped = (plain: string) => {
+          if (!rec) return;
+          const cat = flashcardCategoryIdForSwRecord(settings.flashcardCategories, rec.type);
+          const word = plain.replace(/\s+/g, " ").trim();
+          if (!word) return;
+          const low = word.toLowerCase();
+          if (flashcards.some((c) => c.category === cat && c.word.trim().toLowerCase() === low)) return;
+          addFlashcard({ word, meaning: "", category: cat, example: undefined });
+        };
+      }
+      wrapHighlightContentEditable(el, color, sync, wrapOpts);
       if (refocusEditor) el.focus();
     },
     [mode, rec, ieltsReady, settings.flashcardCategories, flashcards, addFlashcard],
@@ -903,6 +1023,7 @@ export default function IeltsRecordDetailPage() {
                   fontWeight: 800,
                   fontSize: 13,
                   cursor: "pointer",
+                  touchAction: "manipulation",
                 }}
                 onMouseDown={(e) => {
                   e.preventDefault();

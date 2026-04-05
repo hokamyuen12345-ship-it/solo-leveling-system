@@ -1286,6 +1286,461 @@ function TodayPanel({
   );
 }
 
+/** 進度頁熱力圖：點選某日後可編輯該日任務（與「今日」相同寫入 schedule override） */
+function HeatmapExpandedDayTasks({
+  day,
+  store,
+}: {
+  day: number;
+  store: ReturnType<typeof useIELTSStore>;
+}) {
+  const plan = useMemo(() => store.getDayPlan(day), [store, day]);
+  const hasDayOverride = store.override[day] !== undefined;
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [newTaskIcon, setNewTaskIcon] = useState("✨");
+  const [newTaskLabel, setNewTaskLabel] = useState("自訂任務");
+  const [newTaskTime, setNewTaskTime] = useState("30 分");
+  const [newTaskDesc, setNewTaskDesc] = useState("");
+  const [newTaskTip, setNewTaskTip] = useState("");
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editIcon, setEditIcon] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editTaskBody, setEditTaskBody] = useState("");
+  const [editTip, setEditTip] = useState("");
+  const [expandedTips, setExpandedTips] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setEditingTaskId(null);
+    setAddTaskOpen(false);
+    setExpandedTips({});
+  }, [day]);
+
+  const toggleTip = (key: string) => setExpandedTips((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const openTaskEditor = (t: DayTask) => {
+    setEditingTaskId(t.id);
+    setEditIcon(t.icon);
+    setEditTime(t.time);
+    setEditLabel(t.label);
+    setEditTaskBody(t.task);
+    setEditTip(t.tip);
+  };
+
+  const saveTaskEdit = () => {
+    if (!editingTaskId) return;
+    store.updateDayTask(day, editingTaskId, {
+      icon: editIcon,
+      time: editTime,
+      label: editLabel,
+      task: editTaskBody,
+      tip: editTip,
+    });
+    setEditingTaskId(null);
+  };
+
+  const submitNewTask = () => {
+    store.addDayTask(day, {
+      icon: newTaskIcon,
+      label: newTaskLabel,
+      time: newTaskTime,
+      task: newTaskDesc,
+      tip: newTaskTip,
+    });
+    setAddTaskOpen(false);
+    setNewTaskIcon("✨");
+    setNewTaskLabel("自訂任務");
+    setNewTaskTime("30 分");
+    setNewTaskDesc("");
+    setNewTaskTip("");
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 14,
+        borderRadius: 12,
+        background: "var(--ielts-bg-hover)",
+        border: "1px solid var(--ielts-border-light)",
+      }}
+    >
+      <div className="ielts-text-heading" style={{ fontSize: 15, marginBottom: 12 }}>
+        第 {day} 天
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <button
+          type="button"
+          className="ielts-btn"
+          onClick={() => setAddTaskOpen((o) => !o)}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 10,
+            border: "none",
+            background: "var(--ielts-accent)",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          {addTaskOpen ? "收起表單" : "＋ 新增任務"}
+        </button>
+        {hasDayOverride ? (
+          <button
+            type="button"
+            className="ielts-btn"
+            onClick={() => {
+              if (window.confirm("還原為系統預設的任務清單？（此日自訂內容會消失）")) {
+                store.setOverrideTasks(day, null);
+                setEditingTaskId(null);
+              }
+            }}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "1px solid var(--ielts-border-light)",
+              background: "var(--ielts-bg-surface)",
+              color: "var(--ielts-text-2)",
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            還原預設任務
+          </button>
+        ) : null}
+      </div>
+
+      {addTaskOpen ? (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: 14,
+            borderRadius: 12,
+            border: "1px solid var(--ielts-border-light)",
+            background: "var(--ielts-bg-surface)",
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <span className="ielts-text-caption" style={{ fontWeight: 700 }}>
+            新增「第 {day} 天」任務
+          </span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+              圖示
+              <input className="ielts-input" value={newTaskIcon} onChange={(e) => setNewTaskIcon(e.target.value)} maxLength={8} />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+              預估時間
+              <input className="ielts-input" value={newTaskTime} onChange={(e) => setNewTaskTime(e.target.value)} placeholder="例：30 分" />
+            </label>
+          </div>
+          <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+            標題
+            <input className="ielts-input" value={newTaskLabel} onChange={(e) => setNewTaskLabel(e.target.value)} />
+          </label>
+          <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+            內容說明
+            <textarea
+              className="ielts-textarea-notes"
+              value={newTaskDesc}
+              onChange={(e) => setNewTaskDesc(e.target.value)}
+              placeholder="這項任務要做什麼…"
+              rows={3}
+              style={{ minHeight: 72 }}
+            />
+          </label>
+          <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+            小提示（選填）
+            <input className="ielts-input" value={newTaskTip} onChange={(e) => setNewTaskTip(e.target.value)} />
+          </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="ielts-btn"
+              onClick={submitNewTask}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: "var(--ielts-accent)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              加入清單
+            </button>
+            <button
+              type="button"
+              className="ielts-btn"
+              onClick={() => setAddTaskOpen(false)}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "1px solid var(--ielts-border-light)",
+                background: "var(--ielts-bg-surface)",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {plan.tasks.map((t, idx) => {
+          const key = `${day}_${t.id}`;
+          const done = !!store.completion[key];
+          const strip = taskStripClass(t);
+          const tipOpen = !!expandedTips[key];
+          return (
+            <div
+              key={t.id}
+              className={`ielts-card-static ${strip} ${done ? "ielts-task-done ielts-task-done-strip" : ""}`}
+              style={{
+                ["animationDelay" as string]: `${idx * 0.04}s`,
+                padding: 0,
+                overflow: "hidden",
+                transition: "all 0.2s ease",
+                ...(done
+                  ? {
+                      background: "#f0fdf4",
+                      borderColor: "var(--ielts-border-light)",
+                    }
+                  : {}),
+              }}
+            >
+              {editingTaskId === t.id ? (
+                <div style={{ padding: 14, display: "grid", gap: 10 }} onClick={(e) => e.stopPropagation()}>
+                  <span className="ielts-text-caption" style={{ fontWeight: 700 }}>
+                    編輯任務（第 {day} 天）
+                  </span>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                      圖示
+                      <input className="ielts-input" value={editIcon} onChange={(e) => setEditIcon(e.target.value)} maxLength={8} />
+                    </label>
+                    <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                      預估時間
+                      <input className="ielts-input" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
+                    </label>
+                  </div>
+                  <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                    標題
+                    <input className="ielts-input" value={editLabel} onChange={(e) => setEditLabel(e.target.value)} />
+                  </label>
+                  <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                    內容說明
+                    <textarea
+                      className="ielts-textarea-notes"
+                      value={editTaskBody}
+                      onChange={(e) => setEditTaskBody(e.target.value)}
+                      rows={3}
+                      style={{ minHeight: 72 }}
+                    />
+                  </label>
+                  <label className="ielts-text-caption" style={{ display: "grid", gap: 4 }}>
+                    小提示（選填）
+                    <input className="ielts-input" value={editTip} onChange={(e) => setEditTip(e.target.value)} />
+                  </label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="ielts-btn"
+                      onClick={saveTaskEdit}
+                      style={{
+                        padding: "10px 18px",
+                        borderRadius: 10,
+                        border: "none",
+                        background: "var(--ielts-accent)",
+                        color: "#fff",
+                        fontWeight: 800,
+                        fontSize: 14,
+                        cursor: "pointer",
+                      }}
+                    >
+                      儲存
+                    </button>
+                    <button
+                      type="button"
+                      className="ielts-btn"
+                      onClick={() => setEditingTaskId(null)}
+                      style={{
+                        padding: "10px 18px",
+                        borderRadius: 10,
+                        border: "1px solid var(--ielts-border-light)",
+                        background: "var(--ielts-bg-surface)",
+                        fontWeight: 700,
+                        fontSize: 14,
+                        cursor: "pointer",
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleTip(key)}
+                    onKeyDown={(e) => e.key === "Enter" && toggleTip(key)}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 12,
+                      padding: "16px 16px 12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span style={{ fontSize: 20, lineHeight: 1.2 }}>{t.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                        <span
+                          className="ielts-text-heading"
+                          style={{
+                            minWidth: 0,
+                            flex: 1,
+                            ...(done ? { textDecoration: "line-through", color: "var(--ielts-text-3)" } : {}),
+                          }}
+                        >
+                          {t.label}
+                        </span>
+                        <span className="ielts-text-caption" style={{ whiteSpace: "nowrap", flexShrink: 0, lineHeight: 1.35, paddingTop: 2 }}>
+                          {t.time}
+                        </span>
+                      </div>
+                      <p
+                        className="ielts-text-body"
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 14,
+                          color: "var(--ielts-text-2)",
+                          ...(done ? { textDecoration: "line-through" } : {}),
+                        }}
+                      >
+                        {t.task}
+                      </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          alignItems: "center",
+                          gap: 6,
+                          marginTop: 10,
+                          paddingBottom: 2,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="ielts-btn"
+                          aria-label={`編輯任務：${t.label}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openTaskEditor(t);
+                          }}
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: 8,
+                            border: "none",
+                            background: "transparent",
+                            color: "var(--ielts-accent)",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          編輯
+                        </button>
+                        <button
+                          type="button"
+                          className="ielts-btn"
+                          aria-label={`刪除任務：${t.label}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`確定刪除「${t.label}」？`)) {
+                              store.removeDayTask(day, t.id);
+                              if (editingTaskId === t.id) setEditingTaskId(null);
+                            }
+                          }}
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: 8,
+                            border: "none",
+                            background: "transparent",
+                            color: "var(--ielts-danger)",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          刪除
+                        </button>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={done ? "取消完成" : "標為完成"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        store.toggleTask(day, t.id);
+                      }}
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: "50%",
+                        border: done ? "none" : "2px solid var(--ielts-border-medium)",
+                        background: done ? "var(--ielts-accent)" : "transparent",
+                        color: "#fff",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 14,
+                        fontWeight: 800,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {done ? "✓" : ""}
+                    </button>
+                  </div>
+                  {t.tip ? (
+                    <div
+                      style={{
+                        maxHeight: tipOpen ? 120 : 0,
+                        overflow: "hidden",
+                        transition: "max-height 0.3s ease",
+                        borderTop: tipOpen ? "1px solid var(--ielts-border-light)" : "none",
+                      }}
+                    >
+                      <p className="ielts-text-caption" style={{ padding: "10px 16px 16px", display: "flex", gap: 8, alignItems: "flex-start" }}>
+                        <span>💡</span>
+                        <span>{t.tip}</span>
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProgressPanel({
   store,
   chartRows,
@@ -1373,6 +1828,7 @@ function ProgressPanel({
         >
           {cells.map(({ day, pct }) => {
             const active = day === store.currentDay;
+            const expanded = expandedHeatDay === day;
             return (
               <button
                 key={day}
@@ -1386,7 +1842,11 @@ function ProgressPanel({
                   maxHeight: 52,
                   margin: "0 auto",
                   borderRadius: 10,
-                  border: active ? "2px solid var(--ielts-warning)" : "1px solid var(--ielts-border-light)",
+                  border: expanded
+                    ? "2px solid var(--ielts-accent)"
+                    : active
+                      ? "2px solid var(--ielts-warning)"
+                      : "1px solid var(--ielts-border-light)",
                   cursor: "pointer",
                   fontSize: 13,
                   fontWeight: 700,
@@ -1401,36 +1861,65 @@ function ProgressPanel({
             );
           })}
         </div>
-        {expandedHeatDay != null && (
-          <div
-            style={{
-              marginTop: 16,
-              padding: 14,
-              borderRadius: 12,
-              background: "var(--ielts-bg-hover)",
-              border: "1px solid var(--ielts-border-light)",
-            }}
-          >
-            <div className="ielts-text-heading" style={{ fontSize: 15, marginBottom: 8 }}>
-              第 {expandedHeatDay} 天
-            </div>
-            <p className="ielts-text-caption" style={{ marginBottom: 10 }}>
-              {store.getDayPlan(expandedHeatDay).theme}
-            </p>
-            {store.getDayPlan(expandedHeatDay).tasks.map((t) => {
-              const ok = !!store.completion[`${expandedHeatDay}_${t.id}`];
-              return (
-                <div key={t.id} className="ielts-text-body" style={{ fontSize: 13, padding: "4px 0", color: ok ? "var(--ielts-success)" : "var(--ielts-text-2)" }}>
-                  {ok ? "✓ " : "○ "}
-                  {t.label}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {expandedHeatDay != null ? <HeatmapExpandedDayTasks day={expandedHeatDay} store={store} /> : null}
       </div>
     </div>
   );
+}
+
+function looksReadingFlashcardCat(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  const labLo = lab.toLowerCase();
+  if (id === "reading" || /\breading\b/.test(id)) return true;
+  if (/閱讀|阅读/.test(lab)) return true;
+  return labLo === "reading" || /\breading\b/i.test(lab);
+}
+
+function looksListeningFlashcardCat(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  if (id === "listening" || /\blistening\b/.test(id)) return true;
+  return /聆聽|聽力|听力|Listening|LISTENING|IELTS\s*L\b/i.test(lab);
+}
+
+function looksWritingFlashcardCat(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  if (id === "writing" || /\bwriting\b/.test(id)) return true;
+  return /寫作|写作|Writing|WRITING/i.test(lab);
+}
+
+function looksSpeakingFlashcardCat(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  if (id === "speaking") return true;
+  if (/\b(speaking|spoken)\b/.test(id) || /_speak|speak_/.test(id)) return true;
+  return /口說|口语|口語|說話|Speaking|SPEAKING|IELTS\s*S\b|Oral/i.test(lab);
+}
+
+/**
+ * 篩選列第二行：固定順序 閱讀 → 聆聽 → 寫作 → 口說；其餘自訂類別（如詞彙、語法）接在後面。
+ */
+function partitionFlashcardCategoriesForFilterRow(cats: FlashcardCategoryDef[]): {
+  skillsInRLWSOrder: FlashcardCategoryDef[];
+  rest: FlashcardCategoryDef[];
+} {
+  const consumed = new Set<string>();
+  const pick = (pred: (x: FlashcardCategoryDef) => boolean) => {
+    const hit = cats.find((x) => !consumed.has(x.id) && pred(x));
+    if (hit) consumed.add(hit.id);
+    return hit;
+  };
+  const reading = pick(looksReadingFlashcardCat);
+  const listening = pick(looksListeningFlashcardCat);
+  const writing = pick(looksWritingFlashcardCat);
+  const speaking = pick(looksSpeakingFlashcardCat);
+  const skillsInRLWSOrder = [reading, listening, writing, speaking].filter(
+    (x): x is FlashcardCategoryDef => Boolean(x),
+  );
+  const rest = cats.filter((c) => !consumed.has(c.id));
+  return { skillsInRLWSOrder, rest };
 }
 
 /** 字卡列表左框：與上方統計色一致——待複習清單（紫）優先，其次已掌握（綠）、未掌握（黃） */
@@ -1507,6 +1996,11 @@ function CardsPanel({
   }, [filter, cats]);
   const newCatResolved = cats.some((c) => c.id === newCat) ? newCat : (cats[0]?.id ?? "vocab");
   const ecatResolved = cats.some((c) => c.id === ecat) ? ecat : (cats[0]?.id ?? "vocab");
+
+  const { skillsInRLWSOrder, rest: filterRestCats } = useMemo(
+    () => partitionFlashcardCategoriesForFilterRow(cats),
+    [cats],
+  );
 
   const openCategoryManager = () => {
     const d: Record<string, string> = {};
@@ -1711,49 +2205,75 @@ function CardsPanel({
           </button>
         </div>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        {[
-          { id: "all" as const, label: "全部" },
-          { id: FLASHCARD_REVIEW_QUEUE_FILTER_ID, label: "待複習" },
-          ...cats.map((c) => ({ id: c.id, label: c.label })),
-        ].map((p) => (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          {(
+            [
+              { id: "all" as const, label: "全部" },
+              { id: FLASHCARD_REVIEW_QUEUE_FILTER_ID, label: "待複習" },
+            ] as const
+          ).map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="ielts-btn"
+              onClick={() => setFilter(p.id)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 999,
+                border: "none",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: displayFilter === p.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                color: displayFilter === p.id ? "#fff" : "var(--ielts-text-3)",
+                transition: "all 0.2s ease",
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          {[...skillsInRLWSOrder, ...filterRestCats].map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className="ielts-btn"
+              onClick={() => setFilter(c.id)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 999,
+                border: "none",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                background: displayFilter === c.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                color: displayFilter === c.id ? "#fff" : "var(--ielts-text-3)",
+                transition: "all 0.2s ease",
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
           <button
-            key={p.id}
             type="button"
             className="ielts-btn"
-            onClick={() => setFilter(p.id)}
+            onClick={openCategoryManager}
             style={{
               padding: "8px 14px",
               borderRadius: 999,
-              border: "none",
+              border: "1px dashed var(--ielts-border-medium)",
               fontSize: 13,
               fontWeight: 600,
               cursor: "pointer",
-              background: displayFilter === p.id ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
-              color: displayFilter === p.id ? "#fff" : "var(--ielts-text-3)",
-              transition: "all 0.2s ease",
+              background: "transparent",
+              color: "var(--ielts-text-2)",
             }}
           >
-            {p.label}
+            ⚙ 管理類別
           </button>
-        ))}
-        <button
-          type="button"
-          className="ielts-btn"
-          onClick={openCategoryManager}
-          style={{
-            padding: "8px 14px",
-            borderRadius: 999,
-            border: "1px dashed var(--ielts-border-medium)",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            background: "transparent",
-            color: "var(--ielts-text-2)",
-          }}
-        >
-          ⚙ 管理類別
-        </button>
+        </div>
       </div>
 
       {catManageOpen && (

@@ -533,6 +533,8 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   outline: none;
+  -webkit-user-select: text;
+  user-select: text;
 }
 .ielts-hl-editor[data-empty="true"]:not(:focus)::after {
   content: attr(data-placeholder);
