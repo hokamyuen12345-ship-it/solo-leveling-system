@@ -620,6 +620,8 @@ export default function IeltsRecordDetailPage() {
         setMyAns(r.myAnswer ?? "");
         setImprovedAns(r.improvedAnswer ?? "");
         setAttachmentImageDataUrl(r.attachmentImageDataUrl);
+        // Mark hydrated immediately so the first user edit will autosave.
+        skipAutoSaveUntilHydratedRef.current = id;
         return true;
       }
       return false;
