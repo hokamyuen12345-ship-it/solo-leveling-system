@@ -201,6 +201,8 @@ export type SpeakingWritingEntry = {
   prompt: string;
   myAnswer: string;
   improvedAnswer: string;
+  /** 常犯錯誤／錯誤位置筆記（可含與答案相同嘅高亮標記語法） */
+  commonMistakes?: string;
   notes?: string;
   /** 附圖（壓縮後 data URL），詳情頁預覽用 */
   attachmentImageDataUrl?: string;
@@ -357,6 +359,7 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
     const response = typeof obj.response === "string" ? obj.response : "";
     const myAnswer = typeof obj.myAnswer === "string" ? obj.myAnswer : response;
     const improvedAnswer = typeof obj.improvedAnswer === "string" ? obj.improvedAnswer : "";
+    const commonMistakes = typeof obj.commonMistakes === "string" ? obj.commonMistakes : "";
     const rawAtt = obj.attachmentImageDataUrl;
     const attachmentImageDataUrl =
       typeof rawAtt === "string" && rawAtt.startsWith("data:image/") && rawAtt.length < 4_000_000 ? rawAtt : undefined;
@@ -366,6 +369,7 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
       prompt,
       myAnswer,
       improvedAnswer,
+      ...(commonMistakes ? { commonMistakes } : {}),
       notes,
       attachmentImageDataUrl,
       createdAt,
@@ -964,6 +968,7 @@ export function useIELTSStore() {
       prompt,
       myAnswer: "",
       improvedAnswer: "",
+      commonMistakes: "",
       notes,
       createdAt: iso,
       updatedAt: iso,
@@ -981,16 +986,34 @@ export function useIELTSStore() {
   }, []);
 
   const updateSwRecord = useCallback(
-    (id: string, item: Pick<SpeakingWritingEntry, "type" | "prompt" | "myAnswer" | "improvedAnswer"> & { notes?: string }) => {
+    (
+      id: string,
+      item: Pick<SpeakingWritingEntry, "type" | "prompt" | "myAnswer" | "improvedAnswer"> & {
+        notes?: string;
+        commonMistakes?: string;
+      },
+    ) => {
       const iso = todayIso();
       const prompt = item.prompt.trim();
       const myAnswer = item.myAnswer;
       const improvedAnswer = item.improvedAnswer;
       if (!prompt) return;
       const notes = item.notes?.trim() ? item.notes.trim() : undefined;
+      const commonMistakes = typeof item.commonMistakes === "string" ? item.commonMistakes : undefined;
       setSwRecords((prev) => {
         const next = prev.map((r) =>
-          r.id === id ? { ...r, type: item.type, prompt, myAnswer, improvedAnswer, notes, updatedAt: iso } : r,
+          r.id === id
+            ? {
+                ...r,
+                type: item.type,
+                prompt,
+                myAnswer,
+                improvedAnswer,
+                ...(commonMistakes !== undefined ? { commonMistakes } : {}),
+                notes,
+                updatedAt: iso,
+              }
+            : r,
         );
         // 立即寫入 localStorage：避免詳情頁刷新或快速返回時丟資料
         try {

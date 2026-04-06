@@ -481,9 +481,10 @@ export default function IeltsRecordDetailPage() {
   const id = paramIdToString(params?.id);
   const [loaded, setLoaded] = useState(false);
   const [rec, setRec] = useState<SpeakingWritingEntry | null>(null);
-  const [mode, setMode] = useState<"my" | "improved">("my");
+  const [mode, setMode] = useState<"my" | "improved" | "mistakes">("my");
   const [myAns, setMyAns] = useState("");
   const [improvedAns, setImprovedAns] = useState("");
+  const [commonMistakes, setCommonMistakes] = useState("");
   const [attachmentImageDataUrl, setAttachmentImageDataUrl] = useState<string | undefined>(undefined);
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const [lightboxZoom, setLightboxZoom] = useState(1);
@@ -492,6 +493,7 @@ export default function IeltsRecordDetailPage() {
 
   const myRef = useRef<HTMLDivElement | null>(null);
   const improvedRef = useRef<HTMLDivElement | null>(null);
+  const mistakesRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const persistAnswersRef = useRef<() => void>(() => {});
   const flushSnapshotRef = useRef({
@@ -499,6 +501,7 @@ export default function IeltsRecordDetailPage() {
     recId: null as string | null,
     my: "",
     imp: "",
+    mistakes: "",
     img: undefined as string | undefined,
   });
   const skipAutoSaveUntilHydratedRef = useRef<string | null>(null);
@@ -513,7 +516,7 @@ export default function IeltsRecordDetailPage() {
       savedHighlightRangeRef.current = null;
       return;
     }
-    const ed = mode === "my" ? myRef.current : improvedRef.current;
+    const ed = mode === "my" ? myRef.current : mode === "improved" ? improvedRef.current : mistakesRef.current;
     if (!ed) return;
 
     const onSelectionChange = () => {
@@ -539,11 +542,12 @@ export default function IeltsRecordDetailPage() {
 
   const runHighlight = useCallback(
     (color: HighlightColor, refocusEditor?: boolean) => {
-      const el = mode === "my" ? myRef.current : improvedRef.current;
+      const el = mode === "my" ? myRef.current : mode === "improved" ? improvedRef.current : mistakesRef.current;
       if (!el) return;
       const sync = (serialized: string) => {
         if (mode === "my") setMyAns(serialized);
-        else setImprovedAns(serialized);
+        else if (mode === "improved") setImprovedAns(serialized);
+        else setCommonMistakes(serialized);
       };
       const wrapOpts: Parameters<typeof wrapHighlightContentEditable>[3] = {
         savedSelectionRange: savedHighlightRangeRef.current,
@@ -551,7 +555,7 @@ export default function IeltsRecordDetailPage() {
           savedHighlightRangeRef.current = null;
         },
       };
-      if (color === "red" && rec && ieltsReady) {
+      if (color === "red" && rec && ieltsReady && mode !== "mistakes") {
         wrapOpts.onRedWrapped = (plain: string) => {
           if (!rec) return;
           const cat = flashcardCategoryIdForSwRecord(settings.flashcardCategories, rec.type);
@@ -624,6 +628,7 @@ export default function IeltsRecordDetailPage() {
         setRec(r);
         setMyAns(r.myAnswer ?? "");
         setImprovedAns(r.improvedAnswer ?? "");
+        setCommonMistakes(r.commonMistakes ?? "");
         setAttachmentImageDataUrl(r.attachmentImageDataUrl);
         // Mark hydrated immediately so the first user edit will autosave.
         skipAutoSaveUntilHydratedRef.current = id;
@@ -656,6 +661,7 @@ export default function IeltsRecordDetailPage() {
             ...x,
             myAnswer: myAns,
             improvedAnswer: improvedAns,
+            commonMistakes,
             ...(attachmentImageDataUrl ? { attachmentImageDataUrl } : { attachmentImageDataUrl: undefined }),
             updatedAt: iso,
           }
@@ -668,12 +674,13 @@ export default function IeltsRecordDetailPage() {
             ...prev,
             myAnswer: myAns,
             improvedAnswer: improvedAns,
+            commonMistakes,
             attachmentImageDataUrl,
             updatedAt: iso,
           }
         : prev,
     );
-  }, [attachmentImageDataUrl, improvedAns, myAns, rec, id]);
+  }, [attachmentImageDataUrl, commonMistakes, improvedAns, myAns, rec, id]);
 
   persistAnswersRef.current = persistAnswers;
 
@@ -683,9 +690,10 @@ export default function IeltsRecordDetailPage() {
       recId: rec?.id ?? null,
       my: myAns,
       imp: improvedAns,
+      mistakes: commonMistakes,
       img: attachmentImageDataUrl,
     };
-  }, [attachmentImageDataUrl, id, rec?.id, myAns, improvedAns]);
+  }, [attachmentImageDataUrl, commonMistakes, id, rec?.id, myAns, improvedAns]);
 
   useEffect(() => {
     if (!rec || rec.id !== id) return;
@@ -695,7 +703,7 @@ export default function IeltsRecordDetailPage() {
     }
     const t = window.setTimeout(() => persistAnswersRef.current(), 450);
     return () => window.clearTimeout(t);
-  }, [attachmentImageDataUrl, myAns, improvedAns, rec, id]);
+  }, [attachmentImageDataUrl, commonMistakes, myAns, improvedAns, rec, id]);
 
   const writeSnapshotToStorage = useCallback(() => {
     const s = flushSnapshotRef.current;
@@ -708,6 +716,7 @@ export default function IeltsRecordDetailPage() {
             ...x,
             myAnswer: s.my,
             improvedAnswer: s.imp,
+            commonMistakes: s.mistakes,
             ...(s.img ? { attachmentImageDataUrl: s.img } : { attachmentImageDataUrl: undefined }),
             updatedAt: iso,
           }
@@ -810,19 +819,21 @@ export default function IeltsRecordDetailPage() {
 
         {rec ? (
           <>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
                 className="ielts-btn"
                 onClick={() => setMode("my")}
                 style={{
-                  flex: 1,
-                  padding: "10px 12px",
+                  flex: "1 1 90px",
+                  minWidth: 0,
+                  padding: "10px 8px",
                   borderRadius: 12,
                   border: "1px solid var(--ielts-border-light)",
                   background: mode === "my" ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
                   color: mode === "my" ? "#fff" : "var(--ielts-text-2)",
                   fontWeight: 800,
+                  fontSize: 13,
                   cursor: "pointer",
                 }}
               >
@@ -833,19 +844,45 @@ export default function IeltsRecordDetailPage() {
                 className="ielts-btn"
                 onClick={() => setMode("improved")}
                 style={{
-                  flex: 1,
-                  padding: "10px 12px",
+                  flex: "1 1 90px",
+                  minWidth: 0,
+                  padding: "10px 8px",
                   borderRadius: 12,
                   border: "1px solid var(--ielts-border-light)",
                   background: mode === "improved" ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
                   color: mode === "improved" ? "#fff" : "var(--ielts-text-2)",
                   fontWeight: 800,
+                  fontSize: 13,
                   cursor: "pointer",
                 }}
               >
                 進階版本
               </button>
+              <button
+                type="button"
+                className="ielts-btn"
+                onClick={() => setMode("mistakes")}
+                style={{
+                  flex: "1 1 90px",
+                  minWidth: 0,
+                  padding: "10px 8px",
+                  borderRadius: 12,
+                  border: "1px solid var(--ielts-border-light)",
+                  background: mode === "mistakes" ? "var(--ielts-accent)" : "var(--ielts-bg-hover)",
+                  color: mode === "mistakes" ? "#fff" : "var(--ielts-text-2)",
+                  fontWeight: 800,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                常犯錯誤
+              </button>
             </div>
+            {mode === "mistakes" ? (
+              <p className="ielts-text-caption" style={{ margin: "10px 0 0", lineHeight: 1.5, color: "var(--ielts-text-2)" }}>
+                記錄你成日錯嘅位、句或要點（例如時態、主謂、連接詞）。可圈選文字再用底部顏色標示重點。
+              </p>
+            ) : null}
 
             <div style={{ marginTop: 14 }}>
               <input
@@ -969,12 +1006,21 @@ export default function IeltsRecordDetailPage() {
                   topMargin={0}
                   onFocusChange={onAnswerFocusChange}
                 />
-              ) : (
+              ) : mode === "improved" ? (
                 <HighlightEditor
                   value={improvedAns}
                   onChange={setImprovedAns}
                   placeholder="在這裡寫「進階版本」…"
                   editorRef={improvedRef}
+                  topMargin={0}
+                  onFocusChange={onAnswerFocusChange}
+                />
+              ) : (
+                <HighlightEditor
+                  value={commonMistakes}
+                  onChange={setCommonMistakes}
+                  placeholder="寫低常犯錯誤位置或要點…（可複製答案片段貼上再標示）"
+                  editorRef={mistakesRef}
                   topMargin={0}
                   onFocusChange={onAnswerFocusChange}
                 />

@@ -2919,6 +2919,7 @@ function RecordsPanel({
       prompt: editRecordPrompt.trim(),
       myAnswer: cur.myAnswer,
       improvedAnswer: cur.improvedAnswer,
+      commonMistakes: cur.commonMistakes ?? "",
       notes: editRecordNotes.trim() || undefined,
     });
     closeRecordSettings();
@@ -2936,7 +2937,9 @@ function RecordsPanel({
           : store.swRecords.filter((r) => r.type === filter);
     const needle = q.trim().toLowerCase();
     if (!needle) return base;
-    return base.filter((r) => `${r.prompt}\n${r.myAnswer}\n${r.improvedAnswer}\n${r.notes ?? ""}`.toLowerCase().includes(needle));
+    return base.filter((r) =>
+      `${r.prompt}\n${r.myAnswer}\n${r.improvedAnswer}\n${r.commonMistakes ?? ""}\n${r.notes ?? ""}`.toLowerCase().includes(needle),
+    );
   }, [filter, q, store.swRecords]);
 
   useEffect(() => {
