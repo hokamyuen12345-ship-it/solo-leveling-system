@@ -1005,15 +1005,6 @@ export function useIELTSStore() {
     });
   }, []);
 
-  const clearSwRecords = useCallback(() => {
-    setSwRecords([]);
-    try {
-      lsSet(IELTS_SW_RECORDS_KEY, []);
-    } catch {
-      /* */
-    }
-  }, []);
-
   const clearAllLocalData = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
@@ -1264,7 +1255,6 @@ export function useIELTSStore() {
     addSwRecord,
     updateSwRecord,
     removeSwRecord,
-    clearSwRecords,
     clearAllLocalData,
     reloadFromLocalStorage,
     exportAll,

@@ -2868,6 +2868,37 @@ function RecordsPanel({
   const [prompt, setPrompt] = useState("");
   const [notes, setNotes] = useState("");
 
+  const [recordSettingsId, setRecordSettingsId] = useState<string | null>(null);
+  const [editRecordType, setEditRecordType] = useState<SpeakingWritingType>("writing_part2");
+  const [editRecordPrompt, setEditRecordPrompt] = useState("");
+  const [editRecordNotes, setEditRecordNotes] = useState("");
+
+  const openRecordSettings = (r: SpeakingWritingEntry) => {
+    setEditRecordType(r.type);
+    setEditRecordPrompt(r.prompt);
+    setEditRecordNotes(r.notes ?? "");
+    setRecordSettingsId(r.id);
+  };
+
+  const closeRecordSettings = () => setRecordSettingsId(null);
+
+  const saveRecordSettings = () => {
+    if (!recordSettingsId) return;
+    const cur = store.swRecords.find((x) => x.id === recordSettingsId);
+    if (!cur) return;
+    if (!editRecordPrompt.trim()) {
+      window.alert("請填寫題目。");
+      return;
+    }
+    store.updateSwRecord(recordSettingsId, {
+      type: editRecordType,
+      prompt: editRecordPrompt.trim(),
+      myAnswer: cur.myAnswer,
+      improvedAnswer: cur.improvedAnswer,
+      notes: editRecordNotes.trim() || undefined,
+    });
+    closeRecordSettings();
+  };
 
   // Keep for backward compatibility; detail UI is now a standalone route
   const active = useMemo(() => (activeId ? store.swRecords.find((r) => r.id === activeId) ?? null : null), [activeId, store.swRecords]);
@@ -2908,6 +2939,11 @@ function RecordsPanel({
   useEffect(() => {
     setNavHidden(false);
   }, [setNavHidden]);
+
+  useEffect(() => {
+    if (!recordSettingsId) return;
+    if (!store.swRecords.some((x) => x.id === recordSettingsId)) setRecordSettingsId(null);
+  }, [recordSettingsId, store.swRecords]);
 
   // 詳情頁邏輯移到 /ielts/records/[id]
 
@@ -3072,9 +3108,106 @@ function RecordsPanel({
                   點擊進入，寫「我的答案 / 進階版本」
                 </div>
               </div>
+              <button
+                type="button"
+                className="ielts-btn"
+                aria-label="記錄設定"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  openRecordSettings(r);
+                }}
+                style={{
+                  flexShrink: 0,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid var(--ielts-border-light)",
+                  background: "var(--ielts-bg-hover)",
+                  color: "var(--ielts-text-2)",
+                  cursor: "pointer",
+                }}
+              >
+                設定
+              </button>
             </div>
           </div>
         ))
+      )}
+
+      {recordSettingsId && (
+        <IeltsSheetPortal themeDark={themeDark} accentPink={accentPink}>
+          <div className="ielts-sheet-backdrop" role="presentation" style={{ pointerEvents: "auto" }} onClick={closeRecordSettings} />
+          <div
+            className="ielts-sheet"
+            style={{ pointerEvents: "auto", maxHeight: "85vh", overflowY: "auto", paddingBottom: "max(24px, env(safe-area-inset-bottom, 0px))" }}
+          >
+            <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
+              記錄設定
+            </div>
+            <p className="ielts-text-caption" style={{ margin: "0 0 12px", lineHeight: 1.55, color: "var(--ielts-text-2)" }}>
+              可修改題目（列表顯示標題）、類型與備註；答案請在詳情頁編輯。
+            </p>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              類型
+              <select
+                className="ielts-input"
+                value={editRecordType}
+                onChange={(e) => setEditRecordType(e.target.value as SpeakingWritingType)}
+              >
+                <option value="writing_part1">Writing Part 1</option>
+                <option value="writing_part2">Writing Part 2</option>
+                <option value="writing">Writing（舊版，等同 Part 2）</option>
+                <option value="speaking">Speaking</option>
+              </select>
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              題目（重新命名／編輯）
+              <textarea
+                className="ielts-input"
+                style={{ minHeight: 88 }}
+                value={editRecordPrompt}
+                onChange={(e) => setEditRecordPrompt(e.target.value)}
+                placeholder="題目或主題文字…"
+              />
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 14 }}>
+              備註（選填）
+              <textarea className="ielts-input" style={{ minHeight: 72 }} value={editRecordNotes} onChange={(e) => setEditRecordNotes(e.target.value)} />
+            </label>
+            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+              <button type="button" className="ielts-btn" style={{ ...outlineBtn(), flex: 1 }} onClick={closeRecordSettings}>
+                取消
+              </button>
+              <button type="button" className="ielts-btn" style={{ ...solidBtn(), flex: 1 }} onClick={saveRecordSettings}>
+                儲存
+              </button>
+            </div>
+            <button
+              type="button"
+              className="ielts-btn"
+              style={{
+                width: "100%",
+                border: "1px solid var(--ielts-danger)",
+                color: "var(--ielts-danger)",
+                background: "transparent",
+                fontWeight: 800,
+                padding: "10px 14px",
+                borderRadius: 12,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                if (!recordSettingsId) return;
+                if (window.confirm("確定刪除此記錄？此操作無法復原。")) {
+                  store.removeSwRecord(recordSettingsId);
+                  closeRecordSettings();
+                }
+              }}
+            >
+              刪除此記錄
+            </button>
+          </div>
+        </IeltsSheetPortal>
       )}
 
       {addOpen && (
@@ -3470,16 +3603,10 @@ function SettingsTab({
   const [dangerZoneOpen, setDangerZoneOpen] = useState(false);
   const [clearConfirmStep, setClearConfirmStep] = useState<1 | 2>(1);
   const [clearPhrase, setClearPhrase] = useState("");
-  const [recordDeleteId, setRecordDeleteId] = useState<string>("");
 
   useEffect(() => {
     setGoogleKeyDraft(getStoredGoogleAIKey());
   }, []);
-
-  useEffect(() => {
-    if (recordDeleteId && store.swRecords.some((r) => r.id === recordDeleteId)) return;
-    setRecordDeleteId(store.swRecords[0]?.id ?? "");
-  }, [recordDeleteId, store.swRecords]);
 
   const closeClearSheet = () => {
     setClearSheetOpen(false);
@@ -3655,64 +3782,6 @@ function SettingsTab({
           <p className="ielts-text-caption" style={{ marginTop: 10 }}>
             {msg}
           </p>
-        )}
-      </div>
-
-      <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>
-        <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
-          記錄管理
-        </div>
-        <p className="ielts-text-caption" style={{ margin: "0 0 12px", lineHeight: 1.55, color: "var(--ielts-text-2)" }}>
-          刪除功能已集中在此處（列表/詳情頁不再顯示刪除按鈕）。
-        </p>
-        {store.swRecords.length === 0 ? (
-          <p className="ielts-text-caption" style={{ margin: 0, color: "var(--ielts-text-3)" }}>
-            目前沒有任何記錄。
-          </p>
-        ) : (
-          <>
-            <label className="ielts-text-caption" style={{ display: "grid", gap: 6 }}>
-              選擇要刪除的記錄
-              <select className="ielts-input" value={recordDeleteId} onChange={(e) => setRecordDeleteId(e.target.value)}>
-                {store.swRecords.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.updatedAt} · {recordTypeLabel(r.type)} · {r.prompt.length > 40 ? `${r.prompt.slice(0, 40)}…` : r.prompt}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-              <button
-                type="button"
-                className="ielts-btn"
-                style={{ ...outlineBtn(), flex: 1, color: "var(--ielts-danger)", borderColor: "var(--ielts-danger)" }}
-                onClick={() => {
-                  const id = recordDeleteId;
-                  if (!id) return;
-                  const r = store.swRecords.find((x) => x.id === id);
-                  const title = r ? r.prompt.slice(0, 30) : "";
-                  if (window.confirm(`確定刪除此記錄？\n${title ? `「${title}${r && r.prompt.length > 30 ? "…" : ""}」` : ""}`)) {
-                    store.removeSwRecord(id);
-                  }
-                }}
-              >
-                刪除所選記錄
-              </button>
-              <button
-                type="button"
-                className="ielts-btn"
-                style={{ ...solidBtn(), flex: 1, background: "var(--ielts-danger)" }}
-                onClick={() => {
-                  if (window.confirm(`確定清空全部記錄？（共 ${store.swRecords.length} 筆，無法復原）`)) {
-                    store.clearSwRecords();
-                    setRecordDeleteId("");
-                  }
-                }}
-              >
-                清空全部記錄
-              </button>
-            </div>
-          </>
         )}
       </div>
 
