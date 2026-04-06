@@ -46,6 +46,23 @@ function isFlashcardWordPatchV1(json: unknown): json is FlashcardWordPatchV1 {
   if (!o.map || typeof o.map !== "object") return false;
   return true;
 }
+
+export type FlashcardTextPatchV1 = {
+  type: "flashcard_text_patch";
+  schemaVersion: 1;
+  createdAt?: string;
+  /** id -> { word?, meaning? } */
+  map: Record<string, { word?: string; meaning?: string }>;
+};
+
+function isFlashcardTextPatchV1(json: unknown): json is FlashcardTextPatchV1 {
+  if (!json || typeof json !== "object") return false;
+  const o = json as Record<string, unknown>;
+  if (o.type !== "flashcard_text_patch") return false;
+  if (o.schemaVersion !== 1) return false;
+  if (!o.map || typeof o.map !== "object") return false;
+  return true;
+}
 export type SkillType = "L" | "R" | "W" | "S";
 
 /** `writing` 為舊版單一寫作類型，統計與篩選時視同 Part 2 */
@@ -1090,10 +1107,50 @@ export function useIELTSStore() {
     return { updated, missing };
   }, []);
 
+  const applyFlashcardTextPatch = useCallback((patch: FlashcardTextPatchV1) => {
+    const map = patch.map ?? {};
+    const patchMap = new Map<string, { word?: string; meaning?: string }>();
+    for (const [id, v] of Object.entries(map)) {
+      if (typeof id !== "string") continue;
+      if (!v || typeof v !== "object") continue;
+      const vv = v as { word?: unknown; meaning?: unknown };
+      const nextWord = typeof vv.word === "string" ? vv.word.trim() : undefined;
+      const nextMeaning = typeof vv.meaning === "string" ? vv.meaning.trim() : undefined;
+      if (!nextWord && !nextMeaning) continue;
+      patchMap.set(id, { word: nextWord || undefined, meaning: nextMeaning || undefined });
+    }
+    if (patchMap.size === 0) return { updated: 0, missing: 0 };
+
+    let updated = 0;
+    let missing = 0;
+
+    setFlashcards((prev) => {
+      const valid = new Set(prev.map((c) => c.id));
+      for (const id of patchMap.keys()) {
+        if (!valid.has(id)) missing++;
+      }
+      return prev.map((c) => {
+        const p = patchMap.get(c.id);
+        if (!p) return c;
+        const w = p.word ?? c.word;
+        const m = p.meaning ?? c.meaning;
+        if (w === c.word && m === c.meaning) return c;
+        updated++;
+        return { ...c, word: w, meaning: m };
+      });
+    });
+
+    return { updated, missing };
+  }, []);
+
   const importAll = useCallback((json: unknown) => {
     if (isFlashcardWordPatchV1(json)) {
       const { updated, missing } = applyFlashcardWordPatch(json);
       return { mode: "flashcard_word_patch" as const, updated, missing };
+    }
+    if (isFlashcardTextPatchV1(json)) {
+      const { updated, missing } = applyFlashcardTextPatch(json);
+      return { mode: "flashcard_text_patch" as const, updated, missing };
     }
     if (!json || typeof json !== "object") throw new Error("Invalid JSON");
     const raw = json as Record<string, unknown>;
@@ -1203,6 +1260,7 @@ export function useIELTSStore() {
     exportAll,
     importAll,
     applyFlashcardWordPatch,
+    applyFlashcardTextPatch,
     addFlashcardCategory,
     renameFlashcardCategory,
     removeFlashcardCategory,

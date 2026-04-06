@@ -1,0 +1,351 @@
+{
+  "type": "flashcard_text_patch",
+  "schemaVersion": 1,
+  "createdAt": "2026-04-06T11:07:17.360Z",
+  "map": {
+    "4251dbc3-7fcc-43bf-b91d-75c025a64cf1": {
+      "word": "clinic",
+      "meaning": "診所;門診部 (n)"
+    },
+    "2c693fd4-5973-4ba4-90fa-3fbea04d1af6": {
+      "word": "branch off",
+      "meaning": "（道路）岔開，分岔 (phrasal verb)"
+    },
+    "03c1fead-bf6d-4e32-b17c-a37cfdb74e50": {
+      "word": "genetic",
+      "meaning": "基因的;遺傳訊息的 (adj)"
+    },
+    "a3e84ab2-72d1-4783-a7aa-91b293b5c1d5": {
+      "word": "slope",
+      "meaning": "斜坡 (n/v/adj/adv)"
+    },
+    "dd74f4b2-5382-460b-8b50-029d42e69927": {
+      "word": "steep",
+      "meaning": "（斜坡）陡的，陡峭的 (n/v/adj)"
+    },
+    "21e8a67c-620f-4d4d-8a1f-17c0687911b4": {
+      "word": "delivery",
+      "meaning": "運送，遞送，投遞 (n)"
+    },
+    "03fa009a-c897-41a5-86d3-7b79d197b256": {
+      "word": "sorting",
+      "meaning": "分類/ 排序 (n/v)"
+    },
+    "b358cbcf-dacb-4e91-a767-228c09c7615b": {
+      "word": "sort",
+      "meaning": "種類，類型 (n/v)"
+    },
+    "bdc3f4f9-0214-46c6-bf65-77c84a2ff23b": {
+      "word": "equipment",
+      "meaning": "設備;器材;用具 (n)"
+    },
+    "12189cb6-e1e8-4e62-87ca-5da16e95b380": {
+      "word": "procedure",
+      "meaning": "程式；步驟；常規 (n)"
+    },
+    "5591d8bd-7a6b-432a-831f-44924d7f8bfc": {
+      "word": "portion",
+      "meaning": "一部分;一份/ 部分 (n/v)"
+    },
+    "204ebadb-d98f-40fa-948d-ef93538b42ec": {
+      "word": "Certificate",
+      "meaning": "證書;證明 (n/v)"
+    },
+    "f9ae4bd0-4f23-4f84-bb6b-a3542d79a345": {
+      "word": "temporary",
+      "meaning": "短暫的;暫時的，臨時的 (n/adj)"
+    },
+    "f53d01a2-ab5c-4b46-8343-4288a572d15a": {
+      "word": "Vacancy",
+      "meaning": "職位空缺 (n)"
+    },
+    "ae1c51ef-667b-497c-8b4d-d0a105361ba8": {
+      "word": "role",
+      "meaning": "地位;職責;作用;任務 (n)"
+    },
+    "2aee008d-ef60-416d-9461-bb5ca1ab40e7": {
+      "word": "essential",
+      "meaning": "必要的，必不可少的 (n/adj)"
+    },
+    "d93db131-4fbf-41e8-9483-2893e71eb57a": {
+      "word": "productivity",
+      "meaning": "生產率 (n)"
+    },
+    "9c402f69-5ea3-4915-b48f-4dc7b62a782a": {
+      "word": "in order to",
+      "meaning": "為了 (phrase)"
+    },
+    "29612a66-1d57-4a24-b832-f71bb6ac037c": {
+      "word": "recognition",
+      "meaning": "承認;認可;接受 (n)"
+    },
+    "0c7d909d-1d64-49ad-b4cd-640ed606a606": {
+      "word": "achieve (v) promotions",
+      "meaning": "獲得晉升 (n)"
+    },
+    "35ef6287-19b2-4838-b482-7a3408a1822b": {
+      "word": "become increasingly common",
+      "meaning": "變得越來越普遍 (phrase)"
+    },
+    "263bb55a-8830-4bb8-9ef6-1338755fa284": {
+      "word": "common",
+      "meaning": "(n/v/adj)"
+    },
+    "28d5f76c-cea7-49e2-8a80-ac3ee9f8fd3d": {
+      "word": "beneficial",
+      "meaning": "有益的，有用的，有利的 (n/adj)"
+    },
+    "4dc6c05e-bca8-4a04-9859-001131ef9601": {
+      "word": "dentist",
+      "meaning": "牙醫 (n)"
+    },
+    "3deb159b-1c26-4fe7-8a47-07b1702b5e7e": {
+      "word": "pollution",
+      "meaning": "污染 (n)"
+    },
+    "ab7b715a-cc80-44bd-be17-a14c590a1961": {
+      "word": "storage",
+      "meaning": "儲存／儲藏 (n/v)"
+    },
+    "d29720a7-6ef3-4a84-848e-c6053bcf993d": {
+      "word": "squash",
+      "meaning": "壁球／壓碎 (n/v)"
+    },
+    "086c6bfd-da79-4dcf-a865-58fe1cf6cab6": {
+      "word": "crucial",
+      "meaning": "關鍵的 ⭐ (adj)"
+    },
+    "fd2ba0ef-179c-4333-b59e-87ed58c0c121": {
+      "word": "plenty",
+      "meaning": "大量／足夠 (n/adj/adv/pron)"
+    },
+    "7620f344-27f2-47a4-8b5a-48a9711c1b79": {
+      "word": "critical",
+      "meaning": "重要的／批判的 ⭐ (n/adj)"
+    },
+    "bd7cd789-146d-41b3-9547-ab7b71c4079b": {
+      "word": "dedication",
+      "meaning": "投入／奉獻 ⭐ (n)"
+    },
+    "3eba7bc4-31ec-4648-9890-4d63851003dc": {
+      "word": "sort of things",
+      "meaning": "各種事情（口語） (phrase)"
+    },
+    "64bc5612-0edb-48fd-872c-5c8c6dce5b13": {
+      "word": "imaginative",
+      "meaning": "有想像力的 (adj)"
+    },
+    "f2dfdcae-cdc4-4db6-974f-8871fc321924": {
+      "word": "novel",
+      "meaning": "新穎的／小說 (adj/n)"
+    },
+    "4e3a00fa-4601-4452-bcca-7c4a9801023f": {
+      "word": "nutrition",
+      "meaning": "營養 (n)"
+    },
+    "f912a92f-2152-455f-8178-5dda1c10c146": {
+      "word": "instructions",
+      "meaning": "指示 (n)"
+    },
+    "1d7255f5-97b3-4725-85d0-817bdcb0a675": {
+      "word": "injury",
+      "meaning": "受傷 (n)"
+    },
+    "6c33987d-ece9-4daa-a738-46a8f51690d0": {
+      "word": "journalism",
+      "meaning": "新聞業 (n)"
+    },
+    "0d7d0699-2db3-49da-abff-eedb29883105": {
+      "word": "narrow-minded",
+      "meaning": "思想狹隘的 ⭐ (adj)"
+    },
+    "3942a62f-3d07-4741-bc4b-a03bb3a8ae47": {
+      "word": "industry",
+      "meaning": "產業 (n)"
+    },
+    "a0d27f74-437f-4f81-bead-680268ff6c4e": {
+      "word": "numerous",
+      "meaning": "大量的（比 many 高級）⭐ (adj)"
+    },
+    "00cc5d63-63ac-4ccb-9954-14ef6a797bc2": {
+      "word": "original",
+      "meaning": "原創的／原本的 ⭐ (adj)"
+    },
+    "c33b872c-797e-4aa0-81f6-3bedd55fc05d": {
+      "word": "fascinating",
+      "meaning": "吸引人的 ⭐ (adj)"
+    },
+    "b0696bd9-31c8-45ae-b7cd-738fa0170ebc": {
+      "word": "musician",
+      "meaning": "音樂家 (n)"
+    },
+    "b3c63b0e-92e7-4cd5-a1bc-a6dae493fce9": {
+      "word": "appearance",
+      "meaning": "外表 (n)"
+    },
+    "50e67a46-416b-4f01-84b5-e7977cb3a750": {
+      "word": "manufacturer",
+      "meaning": "製造商 (n)"
+    },
+    "eae2e84c-caab-4b13-b44f-06163b436679": {
+      "word": "realistic",
+      "meaning": "現實的 ⭐ (adj)"
+    },
+    "1c2f940e-8900-4881-8569-069dc068774d": {
+      "word": "dishonest",
+      "meaning": "不誠實的 (adj)"
+    },
+    "b56eb8d3-89df-4755-b884-79050a4a6511": {
+      "word": "lungs",
+      "meaning": "肺 (n)"
+    },
+    "8d07e554-d338-4a7a-8abe-a0e135361ae7": {
+      "word": "significant",
+      "meaning": "重要的（IELTS 高頻）⭐ (adj)"
+    },
+    "cb26aa3a-3f3d-4db8-8c84-b1445cecbc54": {
+      "word": "routinely",
+      "meaning": "日常地 (adv)"
+    },
+    "26311bc0-43c1-407c-8549-ebef6d89a4e0": {
+      "word": "designated",
+      "meaning": "指定的 (adj)"
+    },
+    "be7a11ad-2dc1-4448-8ffa-763a6a01b4a7": {
+      "word": "urgent",
+      "meaning": "緊急的 (adj)"
+    },
+    "590095de-aa57-4b4d-9d5a-a506737a4901": {
+      "word": "conservation",
+      "meaning": "保育 ⭐ (n)"
+    },
+    "bb907487-3d3f-4b68-bbf3-40c24f26b474": {
+      "word": "illegal",
+      "meaning": "非法的 ⭐ (adj)"
+    },
+    "84916c91-4417-48d4-85e8-7e3387499b79": {
+      "word": "tourism",
+      "meaning": "旅遊業 (n)"
+    },
+    "fb484ebe-15e4-4d6b-b764-4348ae0cbc6a": {
+      "word": "northeast",
+      "meaning": "東北方向 (n/adj)"
+    },
+    "0fba8f9e-d806-4450-873d-2cdc4059a6ad": {
+      "word": "quiet",
+      "meaning": "安靜的 (adj)"
+    },
+    "4df1e478-d000-4036-a087-b26c223fadc2": {
+      "word": "beach",
+      "meaning": "海灘 (n)"
+    },
+    "ed5f9642-c5d2-4c58-8627-894f46cc7daa": {
+      "word": "restaurant",
+      "meaning": "餐廳 (n)"
+    },
+    "5c61efeb-24d5-439b-a2f4-84c20d204fbc": {
+      "word": "garden",
+      "meaning": "花園 (n)"
+    },
+    "469906a7-4172-422b-ba5a-ca984e22aca7": {
+      "word": "variety",
+      "meaning": "多樣性 (n)"
+    },
+    "15f525e0-7217-40a6-b694-f0759da3c078": {
+      "word": "plane",
+      "meaning": "飛機 (n)"
+    },
+    "e79742dc-1395-4537-9157-bc09e7e734d6": {
+      "word": "tourism",
+      "meaning": "旅遊業 (n)"
+    },
+    "6c29b505-ff82-4f31-b0bf-b0530f0fc3eb": {
+      "word": "training",
+      "meaning": "訓練 (n)"
+    },
+    "a9975aec-7499-4464-84b1-fb5bdec6614f": {
+      "word": "roof",
+      "meaning": "屋頂 (n)"
+    },
+    "9410a080-a67c-4360-85a3-e400bc4ecb7e": {
+      "word": "lake",
+      "meaning": "湖 (n)"
+    },
+    "f9129113-2679-43d2-a28d-920eb91e340b": {
+      "word": "picnic",
+      "meaning": "野餐 (n)"
+    },
+    "0bd89fd6-757b-40ba-94ca-d7d622ea9f92": {
+      "word": "blanket",
+      "meaning": "毯子 (n)"
+    },
+    "bf4046f6-27a2-4168-a9d1-8c8891a47e88": {
+      "word": "exhibition",
+      "meaning": "展覽 (n)"
+    },
+    "bff6872f-6722-4b2b-9330-8593bd8a9769": {
+      "word": "gallery",
+      "meaning": "畫廊 (n)"
+    },
+    "62f72f77-f79c-426a-8e44-4f84c3814a53": {
+      "word": "subway",
+      "meaning": "地鐵 (n)"
+    },
+    "ada8e1a0-c5f8-47c5-ad27-27a1417d586c": {
+      "word": "lawyer",
+      "meaning": "律師 (n)"
+    },
+    "2737ad4b-fd9a-45fe-b7a0-22267d290bc7": {
+      "word": "relaxation",
+      "meaning": "放鬆 (n)"
+    },
+    "ff8c54c6-1819-4da7-ac83-86fe837acaaf": {
+      "word": "vegetarian",
+      "meaning": "素食者／素食的 (n/adj)"
+    },
+    "543f524f-e2be-46ed-b93c-4345f5c37d15": {
+      "word": "forest",
+      "meaning": "森林 (n)"
+    },
+    "de5e4fde-e8c5-46e5-8487-fcb3b6554ad7": {
+      "word": "population",
+      "meaning": "人口 (n)"
+    },
+    "5ee79c7c-f6e5-484c-9f1f-14bcd32562fe": {
+      "word": "crops",
+      "meaning": "農作物 (n)"
+    },
+    "d2e77284-5471-4db5-9622-0660cb8e6b13": {
+      "word": "annual",
+      "meaning": "每年的 (adj)"
+    },
+    "0da785dc-b4cb-4756-81ce-6adba62d1d3d": {
+      "word": "trade",
+      "meaning": "貿易 (n/v)"
+    },
+    "51a33565-3adc-4927-bb21-a5322d43a85a": {
+      "word": "factory",
+      "meaning": "工廠 (n)"
+    },
+    "8bd7b9e4-1357-442d-91e3-aadb5ca58826": {
+      "word": "vocabulary",
+      "meaning": "詞彙 (n)"
+    },
+    "1ecd2c0a-cfde-4d93-a656-79d5af9de423": {
+      "word": "museum",
+      "meaning": "博物館 (n)"
+    },
+    "7430b973-fc45-4e87-8f5f-b4e746ed91d2": {
+      "word": "ancient",
+      "meaning": "古老的 (adj)"
+    },
+    "3efe90f8-037e-47cb-9c11-f3272d63eaa3": {
+      "word": "government",
+      "meaning": "政府 (n)"
+    },
+    "83efaa39-f625-4313-9205-7d0406cd22c6": {
+      "word": "equipment",
+      "meaning": "設備（不可數）⚠️ (n)"
+    }
+  }
+}
