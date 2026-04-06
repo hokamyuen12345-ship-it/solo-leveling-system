@@ -2,8 +2,8 @@
 
 const IELTS_CLICK_MP3_URL = "/ielts/click.mp3";
 
-let clickPool: HTMLAudioElement[] | null = null;
-let clickPoolIdx = 0;
+let clickBuf: AudioBuffer | null = null;
+let clickBufPromise: Promise<AudioBuffer | null> | null = null;
 
 let audioCtx: AudioContext | null = null;
 function getCtx(): AudioContext | null {
@@ -53,36 +53,53 @@ function playFallbackSoftClickSynth() {
   body.stop(t0 + 0.09);
 }
 
-function ensureClickPool() {
-  if (typeof window === "undefined") return;
-  if (clickPool) return;
-  clickPool = Array.from({ length: 4 }, () => {
-    const a = new Audio(IELTS_CLICK_MP3_URL);
-    a.preload = "auto";
-    a.volume = 0.22; // soft
-    return a;
-  });
+async function ensureClickBuffer(): Promise<AudioBuffer | null> {
+  if (typeof window === "undefined") return null;
+  if (clickBuf) return clickBuf;
+  if (clickBufPromise) return clickBufPromise;
+  const ctx = getCtx();
+  if (!ctx) return null;
+
+  clickBufPromise = (async () => {
+    try {
+      const res = await fetch(IELTS_CLICK_MP3_URL);
+      if (!res.ok) return null;
+      const arr = await res.arrayBuffer();
+      const buf = await ctx.decodeAudioData(arr.slice(0));
+      clickBuf = buf;
+      return buf;
+    } catch {
+      return null;
+    } finally {
+      clickBufPromise = null;
+    }
+  })();
+
+  return clickBufPromise;
 }
 
 /** IELTS 全站按鈕點擊音效（mp3）；若播放失敗則 fallback to synth。 */
 export function playIeltsClick() {
-  ensureClickPool();
-  const pool = clickPool;
-  if (!pool || pool.length === 0) {
-    playFallbackSoftClickSynth();
-    return;
-  }
-  const a = pool[clickPoolIdx % pool.length]!;
-  clickPoolIdx++;
-  try {
-    a.pause();
-    a.currentTime = 0;
-    const p = a.play();
-    if (p && typeof (p as Promise<void>).catch === "function") {
-      (p as Promise<void>).catch(() => playFallbackSoftClickSynth());
-    }
-  } catch {
-    playFallbackSoftClickSynth();
-  }
+  const ctx = getCtx();
+  if (!ctx) return;
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+
+  // Start loading on first click if needed.
+  void ensureClickBuffer().then((buf) => {
+    if (!buf) return;
+    const t0 = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.22, t0); // soft
+    src.connect(g);
+    g.connect(ctx.destination);
+
+    src.start(t0);
+  });
+
+  // If buffer isn't ready yet, play fallback (first few taps only).
+  if (!clickBuf) playFallbackSoftClickSynth();
 }
 
