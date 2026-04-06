@@ -19,6 +19,8 @@ function normAnswer(s: string): string {
   return s.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+const DICTATION_HARD_MODE_KEY = "ielts_dictation_hard_mode_v1";
+
 function charMatches(wordChar: string, inputChar: string | undefined): boolean {
   if (inputChar === undefined) return false;
   if (wordChar === " ") return inputChar === " ";
@@ -63,6 +65,7 @@ export function FlashcardDictation({
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<"idle" | "correct" | "wrong">("idle");
   const [reviewHint, setReviewHint] = useState(false);
+  const [hardMode, setHardMode] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const reviewHintTimerRef = useRef<number | null>(null);
 
@@ -72,9 +75,25 @@ export function FlashcardDictation({
     setIdx(0);
     setInput("");
     setFeedback("idle");
+    try {
+      const v = localStorage.getItem(DICTATION_HARD_MODE_KEY);
+      if (v === "1") setHardMode(true);
+      else if (v === "0") setHardMode(false);
+    } catch {
+      /* */
+    }
     // 僅開啟時排程，避免作答中父層 cards 參考變動而重開一輪
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    try {
+      localStorage.setItem(DICTATION_HARD_MODE_KEY, hardMode ? "1" : "0");
+    } catch {
+      /* */
+    }
+  }, [hardMode, open]);
 
   useEffect(() => {
     if (!open) stopSpeaking();
@@ -209,6 +228,30 @@ export function FlashcardDictation({
           默寫 {idx + 1} / {total}
         </span>
       </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <span className="ielts-text-caption" style={{ color: "var(--ielts-text-2)", fontWeight: 700 }}>
+          困難模式（隱藏字母卡）
+        </span>
+        <button
+          type="button"
+          className="ielts-toggle"
+          data-on={hardMode ? "true" : "false"}
+          role="switch"
+          aria-checked={hardMode}
+          aria-label={hardMode ? "困難模式已開啟" : "困難模式已關閉"}
+          onClick={() => setHardMode((v) => !v)}
+        >
+          <div className="ielts-toggle-knob" />
+        </button>
+      </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button
           type="button"
@@ -300,7 +343,7 @@ export function FlashcardDictation({
           </div>
         </div>
 
-        {wordChars.length > 0 ? (
+        {!hardMode && wordChars.length > 0 ? (
           <div
             role="group"
             aria-label="拼字提示：字母已打亂；依聽寫由左而右輸入，對應位置打對時該格變暗"
