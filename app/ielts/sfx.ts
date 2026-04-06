@@ -198,3 +198,6 @@ export function playIeltsClick() {
   if (clickBufFailed) playFallbackSoftClickSynth();
 }
 
+/** 舊名相容：避免本地快取／未合併分支仍 import playSoftClick 時編譯失敗 */
+export { playIeltsClick as playSoftClick };
+
