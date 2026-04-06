@@ -5,6 +5,8 @@ const IELTS_CLICK_MP3_URL = "/ielts/click.mp3";
 let clickBuf: AudioBuffer | null = null;
 let clickBufPromise: Promise<AudioBuffer | null> | null = null;
 let clickBufFailed = false;
+let clickArrBuf: ArrayBuffer | null = null;
+let clickArrBufPromise: Promise<ArrayBuffer | null> | null = null;
 
 let audioCtx: AudioContext | null = null;
 function getCtx(): AudioContext | null {
@@ -111,9 +113,8 @@ async function ensureClickBuffer(): Promise<AudioBuffer | null> {
 
   clickBufPromise = (async () => {
     try {
-      const res = await fetch(IELTS_CLICK_MP3_URL);
-      if (!res.ok) return null;
-      const arr = await res.arrayBuffer();
+      const arr = clickArrBuf ?? (await ensureClickArrayBuffer());
+      if (!arr) return null;
       const buf = await ctx.decodeAudioData(arr.slice(0));
       clickBuf = trimSilence(ctx, buf);
       clickBufFailed = false;
@@ -129,12 +130,37 @@ async function ensureClickBuffer(): Promise<AudioBuffer | null> {
   return clickBufPromise;
 }
 
+async function ensureClickArrayBuffer(): Promise<ArrayBuffer | null> {
+  if (typeof window === "undefined") return null;
+  if (clickArrBuf) return clickArrBuf;
+  if (clickArrBufPromise) return clickArrBufPromise;
+  clickArrBufPromise = (async () => {
+    try {
+      const res = await fetch(IELTS_CLICK_MP3_URL, { cache: "force-cache" });
+      if (!res.ok) return null;
+      const arr = await res.arrayBuffer();
+      clickArrBuf = arr;
+      return arr;
+    } catch {
+      return null;
+    } finally {
+      clickArrBufPromise = null;
+    }
+  })();
+  return clickArrBufPromise;
+}
+
 /** 預載 IELTS click mp3（需要在使用者手勢內呼叫，iOS 才可以 resume AudioContext）。 */
 export function primeIeltsClick() {
   const ctx = getCtx();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume().catch(() => {});
   void ensureClickBuffer();
+}
+
+/** 預先下載 mp3（無需手勢）：降低第一次有聲 click 延遲。 */
+export function prefetchIeltsClick() {
+  void ensureClickArrayBuffer();
 }
 
 /** IELTS 全站按鈕點擊音效（mp3）；若播放失敗則 fallback to synth。 */
@@ -155,8 +181,18 @@ export function playIeltsClick() {
     return;
   }
 
-  // Not ready yet: trigger load; don't play fallback (avoid hearing old synth).
-  void ensureClickBuffer();
+  // Not ready yet: load+decode and play for this tap (no synth while loading).
+  void ensureClickBuffer().then((buf) => {
+    if (!buf || !clickBuf) return;
+    const t0 = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = clickBuf;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.22, t0);
+    src.connect(g);
+    g.connect(ctx.destination);
+    src.start(t0);
+  });
 
   // If decode is impossible on this device/browser, then use synth as last resort.
   if (clickBufFailed) playFallbackSoftClickSynth();

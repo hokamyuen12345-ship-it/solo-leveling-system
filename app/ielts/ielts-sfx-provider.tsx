@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { playIeltsClick, primeIeltsClick } from "./sfx";
+import { playIeltsClick, prefetchIeltsClick, primeIeltsClick } from "./sfx";
 
 function isClickableEl(t: Element | null): HTMLElement | null {
   if (!t) return null;
@@ -19,6 +19,9 @@ export function IeltsSfxProvider() {
   const lastRef = useRef(0);
 
   useEffect(() => {
+    // prefetch mp3 early to reduce first-tap latency
+    prefetchIeltsClick();
+
     const onPointerDown = (e: PointerEvent) => {
       // only primary button / touch
       if (typeof e.button === "number" && e.button !== 0) return;
