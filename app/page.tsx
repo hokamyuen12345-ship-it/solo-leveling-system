@@ -2412,6 +2412,7 @@ export default function Home() {
     const today = getToday();
     const todayGain =
       questsBase.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
+      + topCustomQuests.filter((c) => completed.includes(c.id)).reduce((s, c) => s + skillBonus(topStoredToQuest(c)), 0)
       + (dailyRandomHiddenMerged && completed.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0)
       + aiQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
       + emergencyQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
@@ -2442,7 +2443,7 @@ export default function Home() {
       sound.playSuccess();
       setTimeout(() => setShowArise(false), 3500);
     }
-  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenMerged, user, questsBase, skillBonus, aiQuestsMerged, emergencyQuestsMerged]);
+  }, [completed, debuffs, loaded, bossExpToday, streak, sound, dailyRandomHiddenMerged, user, questsBase, skillBonus, aiQuestsMerged, emergencyQuestsMerged, topCustomQuests]);
 
   // Periodic sync to Supabase when logged in (catches meta, history, boss, achievements, voice)
   useEffect(() => {
@@ -2478,6 +2479,7 @@ export default function Home() {
 
   const todayExp =
     questsBase.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
+    + topCustomQuests.filter((c) => completed.includes(c.id)).reduce((s, c) => s + skillBonus(topStoredToQuest(c)), 0)
     + (dailyRandomHiddenMerged && completed.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0)
     + aiQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+skillBonus(q),0)
     + emergencyQuestsMerged.filter(q=>completed.includes(q.id)).reduce((s,q)=>s+q.exp,0)
@@ -2501,7 +2503,9 @@ export default function Home() {
   }, [rank, level, loaded]);
 
   const attrs = Object.entries(BASE_ATTRS).map(([k,v]) => {
-    const bonus = questsBase.filter(q=>completed.includes(q.id) && q.attr===k).length * 3;
+    const bonus =
+      questsBase.filter(q=>completed.includes(q.id) && q.attr===k).length * 3
+      + topCustomQuests.filter((c) => completed.includes(c.id) && c.attr === k).length * 3;
     return { ...ATTRIBUTES.find(a=>a.key===k)!, value: Math.min(100, v+bonus) };
   });
 
@@ -2587,6 +2591,7 @@ export default function Home() {
     const nx =
       BASE_EXP +
       questsBase.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+      topCustomQuests.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(topStoredToQuest(x)), 0) +
       (dailyRandomHiddenMerged && next.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0) +
       aiQuestsMerged.filter((x) => next.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
       emergencyQuestsMerged.filter((x) => next.includes(x.id)).reduce((s, x) => s + x.exp, 0) +
@@ -2655,6 +2660,7 @@ export default function Home() {
       const nx =
         BASE_EXP +
         questsBase.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
+        topCustomQuests.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(topStoredToQuest(x)), 0) +
         q.exp +
         (dailyRandomHiddenMerged && completed.includes(dailyRandomHiddenMerged.id) ? dailyRandomHiddenMerged.exp : 0) +
         aiQuestsMerged.filter((x) => completed.includes(x.id)).reduce((s, x) => s + skillBonus(x), 0) +
@@ -2709,6 +2715,7 @@ export default function Home() {
     const hid = new Set(hiddenQuestIds);
     return [
       ...questsBase,
+      ...topCustomQuests.map(topStoredToQuest),
       ...(dailyRandomHiddenMerged && !hid.has(dailyRandomHiddenMerged.id) ? [dailyRandomHiddenMerged] : []),
       ...(weeklyBossMerged ? [weeklyBossMerged] : []),
       ...(emergencyActive ? emergencyQuestsMerged.filter((q) => !hid.has(q.id)) : []),
@@ -2727,7 +2734,7 @@ export default function Home() {
     });
     if (bossExpToday > 0) list.push({ id: -1, label: "BOSS RAID", exp: bossExpToday, attr: "EXE" });
     return list;
-  }, [completed, bossExpToday, dailyRandomHiddenMerged, emergencyActive, aiQuestsMerged, weeklyBossMerged, skillBonus, hiddenQuestIds, emergencyQuestsMerged, questsBase]);
+  }, [completed, bossExpToday, dailyRandomHiddenMerged, emergencyActive, aiQuestsMerged, weeklyBossMerged, skillBonus, hiddenQuestIds, emergencyQuestsMerged, questsBase, topCustomQuests]);
   function findQuest(id: number): Quest | undefined {
     return getAllQuests().find(q => q.id === id);
   }

@@ -443,7 +443,8 @@ export default function IELTSPage() {
           minHeight: "100dvh",
           maxWidth: 430,
           margin: "0 auto",
-          padding: "16px 14px calc(108px + env(safe-area-inset-bottom, 0px))",
+          padding: "16px 14px calc(128px + env(safe-area-inset-bottom, 0px))",
+          scrollPaddingBottom: "calc(128px + env(safe-area-inset-bottom, 0px))",
           fontFamily:
             "ui-sans-serif, system-ui, -apple-system, 'PingFang TC', 'Noto Sans TC', 'Microsoft JhengHei', sans-serif",
         }}
@@ -801,7 +802,7 @@ function TodayPanel({
 
       <div
         className={`ielts-card-static ielts-enter ${store.pomo.phase === "focus" || store.pomo.phase === "break" ? "ielts-pomo-active" : ""}`}
-        style={{ padding: 18, transition: "all 0.2s ease" }}
+        style={{ padding: 18, transition: "all 0.2s ease", position: "relative", zIndex: 2 }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div>
@@ -827,6 +828,9 @@ function TodayPanel({
                 fontSize: 14,
                 cursor: "pointer",
                 transition: "all 0.2s ease",
+                flexShrink: 0,
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
               }}
             >
               開始專注 →
@@ -1045,7 +1049,7 @@ function TodayPanel({
         ) : null}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: 8 }}>
         {plan.tasks.map((t, idx) => {
           const key = `${store.currentDay}_${t.id}`;
           const done = !!store.completion[key];
@@ -1060,6 +1064,7 @@ function TodayPanel({
                 padding: 0,
                 overflow: "hidden",
                 transition: "all 0.2s ease",
+                scrollMarginBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
                 ...(done
                   ? {
                       background: "#f0fdf4",
@@ -1143,109 +1148,129 @@ function TodayPanel({
                 </div>
               ) : (
                 <>
+                  {/*
+                    完成鈕不可放在 role="button" 內（巢狀互動元素在行動版 WebKit 常無法點擊）
+                  */}
                   <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleTip(key)}
-                    onKeyDown={(e) => e.key === "Enter" && toggleTip(key)}
                     style={{
                       display: "flex",
                       alignItems: "flex-start",
-                      gap: 12,
-                      padding: "16px 16px 12px",
-                      cursor: "pointer",
+                      gap: 10,
+                      padding: "16px 14px 12px 16px",
                     }}
                   >
-                    <span style={{ fontSize: 20, lineHeight: 1.2 }}>{t.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                        <span
-                          className="ielts-text-heading"
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleTip(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleTip(key);
+                        }
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 12,
+                        flex: 1,
+                        minWidth: 0,
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ fontSize: 20, lineHeight: 1.2 }}>{t.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                          <span
+                            className="ielts-text-heading"
+                            style={{
+                              minWidth: 0,
+                              flex: 1,
+                              ...(done ? { textDecoration: "line-through", color: "var(--ielts-text-3)" } : {}),
+                            }}
+                          >
+                            {t.label}
+                          </span>
+                          <span className="ielts-text-caption" style={{ whiteSpace: "nowrap", flexShrink: 0, lineHeight: 1.35, paddingTop: 2 }}>
+                            {t.time}
+                          </span>
+                        </div>
+                        <p className="ielts-text-body" style={{ margin: "6px 0 0", fontSize: 14, color: "var(--ielts-text-2)", ...(done ? { textDecoration: "line-through" } : {}) }}>
+                          {t.task}
+                        </p>
+                        <div
                           style={{
-                            minWidth: 0,
-                            flex: 1,
-                            ...(done ? { textDecoration: "line-through", color: "var(--ielts-text-3)" } : {}),
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            alignItems: "center",
+                            gap: 6,
+                            marginTop: 10,
+                            paddingBottom: 2,
                           }}
                         >
-                          {t.label}
-                        </span>
-                        <span className="ielts-text-caption" style={{ whiteSpace: "nowrap", flexShrink: 0, lineHeight: 1.35, paddingTop: 2 }}>
-                          {t.time}
-                        </span>
-                      </div>
-                      <p className="ielts-text-body" style={{ margin: "6px 0 0", fontSize: 14, color: "var(--ielts-text-2)", ...(done ? { textDecoration: "line-through" } : {}) }}>
-                        {t.task}
-                      </p>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          alignItems: "center",
-                          gap: 6,
-                          marginTop: 10,
-                          paddingBottom: 2,
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="ielts-btn"
-                          aria-label={`編輯任務：${t.label}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openTaskEditor(t);
-                          }}
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: 8,
-                            border: "none",
-                            background: "transparent",
-                            color: "var(--ielts-accent)",
-                            fontWeight: 700,
-                            fontSize: 12,
-                            cursor: "pointer",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          編輯
-                        </button>
-                        <button
-                          type="button"
-                          className="ielts-btn"
-                          aria-label={`刪除任務：${t.label}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`確定刪除「${t.label}」？`)) {
-                              store.removeDayTask(store.currentDay, t.id);
-                              if (editingTaskId === t.id) setEditingTaskId(null);
-                            }
-                          }}
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: 8,
-                            border: "none",
-                            background: "transparent",
-                            color: "var(--ielts-danger)",
-                            fontWeight: 700,
-                            fontSize: 12,
-                            cursor: "pointer",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          刪除
-                        </button>
+                          <button
+                            type="button"
+                            className="ielts-btn"
+                            aria-label={`編輯任務：${t.label}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openTaskEditor(t);
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ielts-accent)",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              touchAction: "manipulation",
+                            }}
+                          >
+                            編輯
+                          </button>
+                          <button
+                            type="button"
+                            className="ielts-btn"
+                            aria-label={`刪除任務：${t.label}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`確定刪除「${t.label}」？`)) {
+                                store.removeDayTask(store.currentDay, t.id);
+                                if (editingTaskId === t.id) setEditingTaskId(null);
+                              }
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ielts-danger)",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              touchAction: "manipulation",
+                            }}
+                          >
+                            刪除
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <button
                       type="button"
                       className={checkPopId === key ? "ielts-check-pop" : ""}
                       aria-label={done ? "取消完成" : "標為完成"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTaskCheck(store.currentDay, t.id, key);
-                      }}
+                      onClick={() => onTaskCheck(store.currentDay, t.id, key)}
+                      onPointerDown={(e) => e.stopPropagation()}
                       style={{
-                        width: 26,
-                        height: 26,
+                        width: 32,
+                        height: 32,
+                        marginTop: 2,
                         borderRadius: "50%",
                         border: done ? "none" : "2px solid var(--ielts-border-medium)",
                         background: done ? "var(--ielts-accent)" : "transparent",
@@ -1258,6 +1283,8 @@ function TodayPanel({
                         fontSize: 14,
                         fontWeight: 800,
                         transition: "all 0.2s ease",
+                        touchAction: "manipulation",
+                        WebkitTapHighlightColor: "transparent",
                       }}
                     >
                       {done ? "✓" : ""}
@@ -1629,115 +1656,132 @@ function HeatmapExpandedDayTasks({
               ) : (
                 <>
                   <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleTip(key)}
-                    onKeyDown={(e) => e.key === "Enter" && toggleTip(key)}
                     style={{
                       display: "flex",
                       alignItems: "flex-start",
-                      gap: 12,
-                      padding: "16px 16px 12px",
-                      cursor: "pointer",
+                      gap: 10,
+                      padding: "16px 14px 12px 16px",
                     }}
                   >
-                    <span style={{ fontSize: 20, lineHeight: 1.2 }}>{t.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                        <span
-                          className="ielts-text-heading"
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleTip(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleTip(key);
+                        }
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 12,
+                        flex: 1,
+                        minWidth: 0,
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ fontSize: 20, lineHeight: 1.2 }}>{t.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                          <span
+                            className="ielts-text-heading"
+                            style={{
+                              minWidth: 0,
+                              flex: 1,
+                              ...(done ? { textDecoration: "line-through", color: "var(--ielts-text-3)" } : {}),
+                            }}
+                          >
+                            {t.label}
+                          </span>
+                          <span className="ielts-text-caption" style={{ whiteSpace: "nowrap", flexShrink: 0, lineHeight: 1.35, paddingTop: 2 }}>
+                            {t.time}
+                          </span>
+                        </div>
+                        <p
+                          className="ielts-text-body"
                           style={{
-                            minWidth: 0,
-                            flex: 1,
-                            ...(done ? { textDecoration: "line-through", color: "var(--ielts-text-3)" } : {}),
+                            margin: "6px 0 0",
+                            fontSize: 14,
+                            color: "var(--ielts-text-2)",
+                            ...(done ? { textDecoration: "line-through" } : {}),
                           }}
                         >
-                          {t.label}
-                        </span>
-                        <span className="ielts-text-caption" style={{ whiteSpace: "nowrap", flexShrink: 0, lineHeight: 1.35, paddingTop: 2 }}>
-                          {t.time}
-                        </span>
-                      </div>
-                      <p
-                        className="ielts-text-body"
-                        style={{
-                          margin: "6px 0 0",
-                          fontSize: 14,
-                          color: "var(--ielts-text-2)",
-                          ...(done ? { textDecoration: "line-through" } : {}),
-                        }}
-                      >
-                        {t.task}
-                      </p>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          alignItems: "center",
-                          gap: 6,
-                          marginTop: 10,
-                          paddingBottom: 2,
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="ielts-btn"
-                          aria-label={`編輯任務：${t.label}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openTaskEditor(t);
-                          }}
+                          {t.task}
+                        </p>
+                        <div
                           style={{
-                            padding: "4px 8px",
-                            borderRadius: 8,
-                            border: "none",
-                            background: "transparent",
-                            color: "var(--ielts-accent)",
-                            fontWeight: 700,
-                            fontSize: 12,
-                            cursor: "pointer",
-                            whiteSpace: "nowrap",
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            alignItems: "center",
+                            gap: 6,
+                            marginTop: 10,
+                            paddingBottom: 2,
                           }}
                         >
-                          編輯
-                        </button>
-                        <button
-                          type="button"
-                          className="ielts-btn"
-                          aria-label={`刪除任務：${t.label}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`確定刪除「${t.label}」？`)) {
-                              store.removeDayTask(day, t.id);
-                              if (editingTaskId === t.id) setEditingTaskId(null);
-                            }
-                          }}
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: 8,
-                            border: "none",
-                            background: "transparent",
-                            color: "var(--ielts-danger)",
-                            fontWeight: 700,
-                            fontSize: 12,
-                            cursor: "pointer",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          刪除
-                        </button>
+                          <button
+                            type="button"
+                            className="ielts-btn"
+                            aria-label={`編輯任務：${t.label}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openTaskEditor(t);
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ielts-accent)",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              touchAction: "manipulation",
+                            }}
+                          >
+                            編輯
+                          </button>
+                          <button
+                            type="button"
+                            className="ielts-btn"
+                            aria-label={`刪除任務：${t.label}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`確定刪除「${t.label}」？`)) {
+                                store.removeDayTask(day, t.id);
+                                if (editingTaskId === t.id) setEditingTaskId(null);
+                              }
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ielts-danger)",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                              touchAction: "manipulation",
+                            }}
+                          >
+                            刪除
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <button
                       type="button"
                       aria-label={done ? "取消完成" : "標為完成"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        store.toggleTask(day, t.id);
-                      }}
+                      onClick={() => store.toggleTask(day, t.id)}
+                      onPointerDown={(e) => e.stopPropagation()}
                       style={{
-                        width: 26,
-                        height: 26,
+                        width: 32,
+                        height: 32,
+                        marginTop: 2,
                         borderRadius: "50%",
                         border: done ? "none" : "2px solid var(--ielts-border-medium)",
                         background: done ? "var(--ielts-accent)" : "transparent",
@@ -1750,6 +1794,8 @@ function HeatmapExpandedDayTasks({
                         fontSize: 14,
                         fontWeight: 800,
                         transition: "all 0.2s ease",
+                        touchAction: "manipulation",
+                        WebkitTapHighlightColor: "transparent",
                       }}
                     >
                       {done ? "✓" : ""}
