@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { playSoftClick } from "./sfx";
+import { playIeltsClick } from "./sfx";
 
 function isClickableEl(t: Element | null): HTMLElement | null {
   if (!t) return null;
@@ -30,7 +30,7 @@ export function IeltsSfxProvider() {
       if (now - lastRef.current < 70) return; // throttle
       lastRef.current = now;
 
-      playSoftClick();
+      playIeltsClick();
     };
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
     return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true } as unknown as boolean);
