@@ -481,6 +481,7 @@ export default function IeltsRecordDetailPage() {
   const [improvedAns, setImprovedAns] = useState("");
   const [attachmentImageDataUrl, setAttachmentImageDataUrl] = useState<string | undefined>(undefined);
   const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
   const [answerEditorFocused, setAnswerEditorFocused] = useState(false);
   const [hlToolbarBottomPx, setHlToolbarBottomPx] = useState(0);
 
@@ -525,6 +526,11 @@ export default function IeltsRecordDetailPage() {
     document.addEventListener("selectionchange", onSelectionChange);
     return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, [answerEditorFocused, mode]);
+
+  useEffect(() => {
+    if (!imageLightboxOpen) return;
+    setLightboxZoom(1);
+  }, [imageLightboxOpen]);
 
   const runHighlight = useCallback(
     (color: HighlightColor, refocusEditor?: boolean) => {
@@ -1078,21 +1084,102 @@ export default function IeltsRecordDetailPage() {
             >
               關閉
             </button>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute",
+                top: "max(12px, env(safe-area-inset-top))",
+                left: "max(12px, env(safe-area-inset-left))",
+                display: "flex",
+                gap: 8,
+                zIndex: 1,
+              }}
+            >
+              <button
+                type="button"
+                className="ielts-btn"
+                onClick={() => setLightboxZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  background: "rgba(255,255,255,0.12)",
+                  color: "#fff",
+                  fontWeight: 900,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+                aria-label="縮小圖片"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                className="ielts-btn"
+                onClick={() => setLightboxZoom(1)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  background: "rgba(255,255,255,0.12)",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+                aria-label="重設縮放"
+              >
+                100%
+              </button>
+              <button
+                type="button"
+                className="ielts-btn"
+                onClick={() => setLightboxZoom((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  background: "rgba(255,255,255,0.12)",
+                  color: "#fff",
+                  fontWeight: 900,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+                aria-label="放大圖片"
+              >
+                ＋
+              </button>
+            </div>
             {/* eslint-disable-next-line @next/next/no-img-element -- lightbox 放大 data URL */}
-            <img
-              src={attachmentImageDataUrl}
-              alt=""
+            <div
               onClick={(e) => e.stopPropagation()}
               style={{
                 maxWidth: "100%",
                 maxHeight: "min(92vh, 100%)",
-                width: "auto",
-                height: "auto",
-                objectFit: "contain",
+                overflow: "auto",
                 borderRadius: 10,
-                cursor: "default",
+                WebkitOverflowScrolling: "touch",
               }}
-            />
+            >
+              <img
+                src={attachmentImageDataUrl}
+                alt=""
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "min(92vh, 100%)",
+                  width: "auto",
+                  height: "auto",
+                  objectFit: "contain",
+                  borderRadius: 10,
+                  cursor: "default",
+                  transform: `scale(${lightboxZoom})`,
+                  transformOrigin: "center center",
+                  transition: "transform 0.12s ease",
+                  display: "block",
+                  margin: "0 auto",
+                }}
+              />
+            </div>
             <p className="ielts-text-caption" style={{ color: "rgba(255,255,255,0.65)", marginTop: 12, textAlign: "center" }}>
               點擊暗處或按 Esc 關閉
             </p>
