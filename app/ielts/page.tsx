@@ -3511,12 +3511,13 @@ function SettingsTab({
   const doImport = () => {
     try {
       const json = JSON.parse(importText) as { mergeFlashcards?: boolean };
-      store.importAll(json);
-      setMsg(
-        json && typeof json === "object" && json.mergeFlashcards === true
-          ? "已合併字卡到現有清單（其他資料未變更）。"
-          : "已匯入備份。",
-      );
+      const res = store.importAll(json);
+      if (res && typeof res === "object" && (res as { mode?: string }).mode === "flashcard_word_patch") {
+        const r = res as { updated: number; missing: number };
+        setMsg(`已更新 ${r.updated} 張字卡的 word（未找到 id：${r.missing}）。`);
+        return;
+      }
+      setMsg(json && typeof json === "object" && json.mergeFlashcards === true ? "已合併字卡到現有清單（其他資料未變更）。" : "已匯入備份。");
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "匯入失敗。");
     }
@@ -3645,7 +3646,7 @@ function SettingsTab({
           style={{ marginTop: 12, minHeight: 100, fontFamily: "monospace", fontSize: 12 }}
           value={importText}
           onChange={(e) => setImportText(e.target.value)}
-          placeholder="貼上備份 JSON…（若 JSON 含 mergeFlashcards: true 與 flashcards，只會把字卡接到現有清單前，其餘不變）"
+          placeholder="貼上備份 JSON…（或貼上 flashcard_word_patch 只更新字卡 word；若備份 JSON 含 mergeFlashcards: true 與 flashcards，只會把字卡接到現有清單前，其餘不變）"
         />
         <button type="button" className="ielts-btn" style={{ ...outlineBtn(), width: "100%", marginTop: 10 }} onClick={doImport}>
           匯入

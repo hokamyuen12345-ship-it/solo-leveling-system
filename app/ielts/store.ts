@@ -29,6 +29,23 @@ export type Flashcard = {
   mastered: boolean;
   createdAt: string;
 };
+
+export type FlashcardWordPatchV1 = {
+  type: "flashcard_word_patch";
+  schemaVersion: 1;
+  createdAt?: string;
+  /** id -> new word */
+  map: Record<string, string>;
+};
+
+function isFlashcardWordPatchV1(json: unknown): json is FlashcardWordPatchV1 {
+  if (!json || typeof json !== "object") return false;
+  const o = json as Record<string, unknown>;
+  if (o.type !== "flashcard_word_patch") return false;
+  if (o.schemaVersion !== 1) return false;
+  if (!o.map || typeof o.map !== "object") return false;
+  return true;
+}
 export type SkillType = "L" | "R" | "W" | "S";
 
 /** `writing` 為舊版單一寫作類型，統計與篩選時視同 Part 2 */
@@ -1041,7 +1058,43 @@ export function useIELTSStore() {
     };
   }, [completion, flashcardReviewQueue, flashcards, notes, override, pomo, scores, settings, swRecords, wrongItems]);
 
+  const applyFlashcardWordPatch = useCallback((patch: FlashcardWordPatchV1) => {
+    const map = patch.map ?? {};
+    const patchMap = new Map<string, string>();
+    for (const [id, w] of Object.entries(map)) {
+      if (typeof id !== "string") continue;
+      if (typeof w !== "string") continue;
+      const next = w.trim();
+      if (!next) continue;
+      patchMap.set(id, next);
+    }
+    if (patchMap.size === 0) return { updated: 0, missing: 0 };
+
+    let updated = 0;
+    let missing = 0;
+
+    setFlashcards((prev) => {
+      const valid = new Set(prev.map((c) => c.id));
+      for (const id of patchMap.keys()) {
+        if (!valid.has(id)) missing++;
+      }
+      return prev.map((c) => {
+        const nextWord = patchMap.get(c.id);
+        if (!nextWord) return c;
+        if (nextWord === c.word) return c;
+        updated++;
+        return { ...c, word: nextWord };
+      });
+    });
+
+    return { updated, missing };
+  }, []);
+
   const importAll = useCallback((json: unknown) => {
+    if (isFlashcardWordPatchV1(json)) {
+      const { updated, missing } = applyFlashcardWordPatch(json);
+      return { mode: "flashcard_word_patch" as const, updated, missing };
+    }
     if (!json || typeof json !== "object") throw new Error("Invalid JSON");
     const raw = json as Record<string, unknown>;
     /** 僅把 `flashcards` 接到現有字卡最前（與新增字卡順序一致），不覆寫其他備份欄位 */
@@ -1098,6 +1151,7 @@ export function useIELTSStore() {
       );
     }
     if (obj.swRecords) setSwRecords(obj.swRecords);
+    return { mode: "backup" as const };
   }, []);
 
   return {
@@ -1148,6 +1202,7 @@ export function useIELTSStore() {
     reloadFromLocalStorage,
     exportAll,
     importAll,
+    applyFlashcardWordPatch,
     addFlashcardCategory,
     renameFlashcardCategory,
     removeFlashcardCategory,
