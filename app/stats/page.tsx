@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback, type ChangeEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { getGameDayKey as getToday, getPreviousGameDayKey as getYesterday } from "@/lib/gameDay";
 import { expBarFromTotal, levelFromTotalExp } from "@/lib/leveling";
 import { useAvatar } from "@/hooks/useAvatar";
 
@@ -32,11 +33,6 @@ interface MissionHistoryEntry {
 }
 
 const HISTORY_KEY = "slq_history_v1";
-
-function getToday() {
-  const now = new Date();
-  return `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
-}
 
 function appendMissionHistory(entry: MissionHistoryEntry) {
   if (typeof window === "undefined") return;
@@ -94,12 +90,6 @@ function getRank(lv: number) {
   if (lv >= 21) return "C";
   if (lv >= 11) return "D";
   return "E";
-}
-
-function getYesterday() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
 }
 
 function getStreakTitle(streak: number): string {

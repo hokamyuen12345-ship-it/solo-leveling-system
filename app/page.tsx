@@ -16,6 +16,7 @@ import {
   writeMissionTimerSession,
   type MissionTimerStoredQuest,
 } from "@/lib/missionTimerSession";
+import { getGameDayKey as getToday, getPreviousGameDayKey as getYesterday } from "@/lib/gameDay";
 import { expBarFromTotal, levelFromTotalExp } from "@/lib/leveling";
 import { MAX_QUEST_EXP, formatExpValue, formatSignedTodayExp } from "@/lib/formatExp";
 import { useAvatar } from "@/hooks/useAvatar";
@@ -288,10 +289,16 @@ type TopQuestStored = {
   minutes: number;
   attr: AttrKey;
   mode: QuestCompletionMode;
+  /** 為 true 時跨帳務日（06:00）仍保留（介面稱「保留任務」）；明確為 false 時次日自 Top 移除。舊資料缺此欄位視為 true 以相容既有清單。 */
+  keepNextDay?: boolean;
   progressCurrent?: number;
   progressTarget?: number;
   progressPct?: number;
 };
+
+function topQuestPersistsAfterDailyReset(c: TopQuestStored): boolean {
+  return c.keepNextDay !== false;
+}
 
 type QuestOverrideSlice = Partial<
   Pick<Quest, "label" | "minutes" | "exp" | "completionMode" | "progressPct" | "progressCurrent" | "progressTarget">
@@ -419,6 +426,55 @@ function topStoredToQuest(c: TopQuestStored): Quest {
     progressTarget: typeof c.progressTarget === "number" ? c.progressTarget : undefined,
     progressPct: typeof c.progressPct === "number" ? c.progressPct : undefined,
   };
+}
+
+function SlToggleSwitch({
+  checked,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      onClick={() => onChange(!checked)}
+      style={{
+        width: 48,
+        height: 26,
+        borderRadius: 999,
+        border: checked ? "1px solid rgba(56,189,248,0.85)" : "1px solid rgba(100,116,139,0.45)",
+        background: checked ? "rgba(56,189,248,0.22)" : "rgba(15,23,42,0.95)",
+        padding: 3,
+        cursor: "pointer",
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-start",
+        transition: "background 0.18s ease, border-color 0.18s ease",
+        boxSizing: "border-box",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: "block",
+          width: 20,
+          height: 20,
+          borderRadius: "50%",
+          background: checked ? "#38bdf8" : "#475569",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.35)",
+          transform: checked ? "translateX(22px)" : "translateX(0)",
+          transition: "transform 0.18s ease, background 0.18s ease",
+        }}
+      />
+    </button>
+  );
 }
 
 function shouldUseInstantComplete(q: Quest): boolean {
@@ -615,6 +671,28 @@ function markBossCompleted() {
   } catch {}
 }
 
+/** 週次已換、舊 Boss 存檔仍留在 localStorage 時，從隱藏清單移除「上一週該 Boss id」，避免本週抽到相同 id 時被誤隱藏。 */
+function pruneStaleWeeklyBossHideFromLocalStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem(BOSS_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw) as { weekKey?: string; boss?: { id: number } };
+    if (!data.weekKey || data.weekKey === getWeekKey()) return;
+    const bid = data.boss?.id;
+    if (typeof bid !== "number") return;
+    const hRaw = localStorage.getItem(HIDDEN_QUEST_IDS_KEY);
+    if (!hRaw) return;
+    const arr = JSON.parse(hRaw) as unknown;
+    if (!Array.isArray(arr)) return;
+    const next = arr.filter((x) => x !== bid);
+    if (next.length === arr.length) return;
+    localStorage.setItem(HIDDEN_QUEST_IDS_KEY, JSON.stringify(next));
+  } catch {
+    /* */
+  }
+}
+
 function initWeeklyBossIfNeeded(): Quest | null {
   const existing = getWeeklyBoss();
   if (existing) return existing;
@@ -708,11 +786,6 @@ function getShadowArmyCount(): number {
   } catch {
     return 0;
   }
-}
-
-function getToday() {
-  const now = new Date();
-  return `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
 }
 
 function getCompletedCountByAttrFromHistory(): Record<AttrKey, number> {
@@ -951,12 +1024,6 @@ function getRank(lv: number) {
   if (lv >= 21) return "C";
   if (lv >= 11) return "D";
   return "E";
-}
-
-function getYesterday() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
 }
 
 function getStreakTitle(streak: number): string {
@@ -1916,6 +1983,8 @@ export default function Home() {
   const [addTopMode, setAddTopMode] = useState<QuestCompletionMode>("instant");
   const [addTopProgressNum, setAddTopProgressNum] = useState("");
   const [addTopProgressDen, setAddTopProgressDen] = useState("");
+  const [addTopKeepNextDay, setAddTopKeepNextDay] = useState(false);
+  const [editingKeepNextDay, setEditingKeepNextDay] = useState(false);
   const [addDebuffOpen, setAddDebuffOpen] = useState(false);
   const [addDebuffLabel, setAddDebuffLabel] = useState("");
   const [addDebuffExp, setAddDebuffExp] = useState("-10");
@@ -2003,6 +2072,7 @@ export default function Home() {
         const parsed = JSON.parse(tc) as TopQuestStored[];
         if (Array.isArray(parsed)) setTopCustomQuests(parsed.filter((x) => x && typeof x.id === "number"));
       }
+      pruneStaleWeeklyBossHideFromLocalStorage();
       const h = localStorage.getItem(HIDDEN_QUEST_IDS_KEY);
       if (h) {
         const parsed = JSON.parse(h) as unknown;
@@ -2130,26 +2200,35 @@ export default function Home() {
     return [...builtin, ...customDebuffs];
   }, [customDebuffs, hiddenBuiltinDebuffIds]);
 
-  const openQuestSettings = useCallback((quest: Quest) => {
-    setEditingQuestId(quest.id);
-    setEditingLabel(quest.label);
-    setEditingMinutes(String(quest.minutes));
-    setEditingExp(String(quest.exp));
-    setEditingCompletionMode(quest.completionMode ?? (quest.type === "emergency" ? "instant" as const : "timer"));
-    const cur = quest.progressCurrent;
-    const tgt = quest.progressTarget;
-    if (typeof cur === "number" && Number.isFinite(cur) && typeof tgt === "number" && Number.isFinite(tgt) && tgt > 0) {
-      setEditingProgressNum(String(Math.max(0, Math.floor(cur))));
-      setEditingProgressDen(String(Math.max(1, Math.floor(tgt))));
-    } else if (typeof quest.progressPct === "number" && Number.isFinite(quest.progressPct)) {
-      setEditingProgressNum(String(Math.max(0, Math.min(100, Math.round(quest.progressPct)))));
-      setEditingProgressDen("100");
-    } else {
-      setEditingProgressNum("");
-      setEditingProgressDen("");
-    }
-    setQuestSettingsOpen(true);
-  }, []);
+  const openQuestSettings = useCallback(
+    (quest: Quest) => {
+      setEditingQuestId(quest.id);
+      setEditingLabel(quest.label);
+      setEditingMinutes(String(quest.minutes));
+      setEditingExp(String(quest.exp));
+      setEditingCompletionMode(quest.completionMode ?? (quest.type === "emergency" ? "instant" as const : "timer"));
+      const cur = quest.progressCurrent;
+      const tgt = quest.progressTarget;
+      if (typeof cur === "number" && Number.isFinite(cur) && typeof tgt === "number" && Number.isFinite(tgt) && tgt > 0) {
+        setEditingProgressNum(String(Math.max(0, Math.floor(cur))));
+        setEditingProgressDen(String(Math.max(1, Math.floor(tgt))));
+      } else if (typeof quest.progressPct === "number" && Number.isFinite(quest.progressPct)) {
+        setEditingProgressNum(String(Math.max(0, Math.min(100, Math.round(quest.progressPct)))));
+        setEditingProgressDen("100");
+      } else {
+        setEditingProgressNum("");
+        setEditingProgressDen("");
+      }
+      if (quest.id >= TOP_CUSTOM_QUEST_MIN_ID) {
+        const row = topCustomQuests.find((t) => t.id === quest.id);
+        setEditingKeepNextDay(row ? topQuestPersistsAfterDailyReset(row) : false);
+      } else {
+        setEditingKeepNextDay(false);
+      }
+      setQuestSettingsOpen(true);
+    },
+    [topCustomQuests],
+  );
 
   const fadeOutBgm = useCallback(() => {
     const a = audioRef.current;
@@ -2330,6 +2409,19 @@ export default function Home() {
             setMeta({ ...m, shadowSoldiersFromStreak: prev - 1 });
             setShadowSoldiersFromStreak(prev - 1);
           }
+        }
+        try {
+          const tc = localStorage.getItem(TOP_CUSTOM_QUESTS_KEY);
+          if (tc) {
+            const parsed = JSON.parse(tc) as TopQuestStored[];
+            if (Array.isArray(parsed)) {
+              const next = parsed.filter((c) => c && typeof c.id === "number" && topQuestPersistsAfterDailyReset(c));
+              localStorage.setItem(TOP_CUSTOM_QUESTS_KEY, JSON.stringify(next));
+              setTopCustomQuests(next);
+            }
+          }
+        } catch {
+          /* */
         }
       } else {
         setTotalExp(savedTotal);
@@ -2717,7 +2809,7 @@ export default function Home() {
       ...questsBase,
       ...topCustomQuests.map(topStoredToQuest),
       ...(dailyRandomHiddenMerged && !hid.has(dailyRandomHiddenMerged.id) ? [dailyRandomHiddenMerged] : []),
-      ...(weeklyBossMerged ? [weeklyBossMerged] : []),
+      ...(weeklyBossMerged && !hid.has(weeklyBossMerged.id) ? [weeklyBossMerged] : []),
       ...(emergencyActive ? emergencyQuestsMerged.filter((q) => !hid.has(q.id)) : []),
       ...aiQuestsMerged.filter((q) => !hid.has(q.id)),
     ];
@@ -3572,6 +3664,7 @@ export default function Home() {
                         setAddTopMode("instant");
                         setAddTopProgressNum("");
                         setAddTopProgressDen("");
+                        setAddTopKeepNextDay(false);
                       }}
                       style={{
                         padding: "6px 10px",
@@ -3588,9 +3681,6 @@ export default function Home() {
                     >
                       ＋ 新增任務
                     </button>
-                  </div>
-                  <div style={{color:"#7dd3fc",fontSize:"0.55rem",letterSpacing:"1.5px",marginBottom:"12px",opacity:0.9}}>
-                    Top 專屬清單（可新增）＋系統自動挑選（依 EXP 取前 3）
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
                     {topDisplay.length === 0 ? (
@@ -3753,12 +3843,14 @@ export default function Home() {
                       );
                     }
                     if (sid === "boss") {
+                      const weeklyBossVisible =
+                        weeklyBossMerged != null && !hiddenQuestIds.includes(weeklyBossMerged.id);
                       return wrap(
                         <>
-                          {!weeklyBossMerged && customBossQuests.length === 0 ? (
+                          {!weeklyBossVisible && customBossQuests.length === 0 ? (
                             <div style={{ color: "#6A8AAA", fontSize: "0.65rem", padding: "8px 4px" }}>本週尚未抽選 Raid 或尚無自訂 Boss 任務</div>
                           ) : null}
-                          {weeklyBossMerged ? (
+                          {weeklyBossVisible && weeklyBossMerged ? (
                             <div style={{ border: "2px solid rgba(231,76,60,0.5)", borderRadius: 12, padding: 2, marginBottom: 10, background: "rgba(231,76,60,0.06)", boxShadow: "0 0 20px rgba(231,76,60,0.15)" }}>
                               <QuestCard
                                 quest={weeklyBossMerged}
@@ -3900,7 +3992,7 @@ export default function Home() {
                     </button>
                   </div>
                   <div style={{color:"#7A4A4A",fontSize:"0.55rem",letterSpacing:"1px",marginBottom:"10px"}}>
-                    負面行為 · 預設／自訂皆可從清單移除（預設可點「還原預設懲罰」）· 自訂為永久刪除 · 點擊列即啟動（當日不可取消）· 翌日 00:00 自動重置
+                    負面行為 · 預設／自訂皆可從清單移除（預設可點「還原預設懲罰」）· 自訂為永久刪除 · 點擊列即啟動（當日不可取消）· 翌日 06:00 自動重置
                   </div>
                   {allDebuffs.map(d => {
                     const isActive = debuffs.includes(d.id);
@@ -3966,7 +4058,7 @@ export default function Home() {
                           <div style={{ color: "#C8DCF0", fontSize: "0.85rem", fontWeight: 500 }}>{d.label}</div>
                           {isActive ? (
                             <div style={{ marginTop: 4, color: "#8B6A6A", fontSize: "0.58rem", letterSpacing: "0.06em" }}>
-                              已套用 · 翌日 00:00 重置
+                              已套用 · 翌日 06:00 重置
                             </div>
                           ) : null}
                         </div>
@@ -4215,15 +4307,31 @@ export default function Home() {
                           }}
                         />
                       </div>
-                      <span style={{ fontSize: "0.52rem", color: "#64748B", lineHeight: 1.4 }}>
-                        卡片上會顯示如 30/2000。兩欄皆留空則不顯示進度。
-                      </span>
                     </label>
                   </div>
 
-                  <p style={{ margin: "12px 0 0", fontSize: "0.58rem", color: "#64748B", lineHeight: 1.45 }}>
-                    刪除任務：自訂任務會直接移除；其餘任務會從清單隱藏並一併取消今日完成狀態（設定存於本機／已登入時同步雲端）。
-                  </p>
+                  {editingQuestId != null && editingQuestId >= TOP_CUSTOM_QUEST_MIN_ID ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 14,
+                        marginTop: 14,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(56,189,248,0.22)",
+                        background: "rgba(56,189,248,0.06)",
+                      }}
+                    >
+                      <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "#A5D4F7", letterSpacing: "0.14em" }}>保留任務</span>
+                      <SlToggleSwitch
+                        checked={editingKeepNextDay}
+                        onChange={setEditingKeepNextDay}
+                        ariaLabel="保留任務"
+                      />
+                    </div>
+                  ) : null}
 
                   <div style={{ display: "flex", gap: "10px", justifyContent: "space-between", alignItems: "center", marginTop: "16px", flexWrap: "wrap" }}>
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -4332,6 +4440,7 @@ export default function Home() {
                                     minutes: Number.isFinite(mins) ? mins : c.minutes,
                                     exp: Number.isFinite(exp) ? exp : c.exp,
                                     mode: editingCompletionMode,
+                                    keepNextDay: editingKeepNextDay,
                                   })
                                 : c,
                             ),
@@ -4824,6 +4933,27 @@ export default function Home() {
                       </div>
                     </label>
 
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 14,
+                        marginTop: 14,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(56,189,248,0.22)",
+                        background: "rgba(56,189,248,0.06)",
+                      }}
+                    >
+                      <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "#A5D4F7", letterSpacing: "0.14em" }}>保留任務</span>
+                      <SlToggleSwitch
+                        checked={addTopKeepNextDay}
+                        onChange={setAddTopKeepNextDay}
+                        ariaLabel="保留任務"
+                      />
+                    </div>
+
                     <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
                       <button
                         type="button"
@@ -4872,6 +5002,7 @@ export default function Home() {
                               minutes,
                               attr: addTopAttr,
                               mode: addTopMode,
+                              keepNextDay: addTopKeepNextDay,
                               ...progressFields,
                             },
                           ]);
