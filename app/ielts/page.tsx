@@ -3072,17 +3072,6 @@ function RecordsPanel({
                   點擊進入，寫「我的答案 / 進階版本」
                 </div>
               </div>
-              <button
-                type="button"
-                className="ielts-btn"
-                style={{ fontSize: 12, color: "var(--ielts-danger)", border: "none", background: "none", cursor: "pointer", fontWeight: 800, flexShrink: 0 }}
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  if (window.confirm("確定刪除此記錄？")) store.removeSwRecord(r.id);
-                }}
-              >
-                刪除
-              </button>
             </div>
           </div>
         ))
@@ -3481,10 +3470,16 @@ function SettingsTab({
   const [dangerZoneOpen, setDangerZoneOpen] = useState(false);
   const [clearConfirmStep, setClearConfirmStep] = useState<1 | 2>(1);
   const [clearPhrase, setClearPhrase] = useState("");
+  const [recordDeleteId, setRecordDeleteId] = useState<string>("");
 
   useEffect(() => {
     setGoogleKeyDraft(getStoredGoogleAIKey());
   }, []);
+
+  useEffect(() => {
+    if (recordDeleteId && store.swRecords.some((r) => r.id === recordDeleteId)) return;
+    setRecordDeleteId(store.swRecords[0]?.id ?? "");
+  }, [recordDeleteId, store.swRecords]);
 
   const closeClearSheet = () => {
     setClearSheetOpen(false);
@@ -3660,6 +3655,64 @@ function SettingsTab({
           <p className="ielts-text-caption" style={{ marginTop: 10 }}>
             {msg}
           </p>
+        )}
+      </div>
+
+      <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>
+        <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
+          記錄管理
+        </div>
+        <p className="ielts-text-caption" style={{ margin: "0 0 12px", lineHeight: 1.55, color: "var(--ielts-text-2)" }}>
+          刪除功能已集中在此處（列表/詳情頁不再顯示刪除按鈕）。
+        </p>
+        {store.swRecords.length === 0 ? (
+          <p className="ielts-text-caption" style={{ margin: 0, color: "var(--ielts-text-3)" }}>
+            目前沒有任何記錄。
+          </p>
+        ) : (
+          <>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6 }}>
+              選擇要刪除的記錄
+              <select className="ielts-input" value={recordDeleteId} onChange={(e) => setRecordDeleteId(e.target.value)}>
+                {store.swRecords.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.updatedAt} · {recordTypeLabel(r.type)} · {r.prompt.length > 40 ? `${r.prompt.slice(0, 40)}…` : r.prompt}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <button
+                type="button"
+                className="ielts-btn"
+                style={{ ...outlineBtn(), flex: 1, color: "var(--ielts-danger)", borderColor: "var(--ielts-danger)" }}
+                onClick={() => {
+                  const id = recordDeleteId;
+                  if (!id) return;
+                  const r = store.swRecords.find((x) => x.id === id);
+                  const title = r ? r.prompt.slice(0, 30) : "";
+                  if (window.confirm(`確定刪除此記錄？\n${title ? `「${title}${r && r.prompt.length > 30 ? "…" : ""}」` : ""}`)) {
+                    store.removeSwRecord(id);
+                  }
+                }}
+              >
+                刪除所選記錄
+              </button>
+              <button
+                type="button"
+                className="ielts-btn"
+                style={{ ...solidBtn(), flex: 1, background: "var(--ielts-danger)" }}
+                onClick={() => {
+                  if (window.confirm(`確定清空全部記錄？（共 ${store.swRecords.length} 筆，無法復原）`)) {
+                    store.clearSwRecords();
+                    setRecordDeleteId("");
+                  }
+                }}
+              >
+                清空全部記錄
+              </button>
+            </div>
+          </>
         )}
       </div>
 
