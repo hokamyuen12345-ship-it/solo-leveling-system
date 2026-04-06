@@ -223,6 +223,21 @@ export default function IELTSPage() {
     if (!sb) return;
     let cancelled = false;
     const pullAndReload = async (userId: string) => {
+      // 僅在詳情頁曾寫入記錄時先上傳再拉取，避免雲端舊資料覆蓋本機；否則維持先拉（新裝置不會用空本機蓋掉雲端）
+      let pushFirst = false;
+      try {
+        pushFirst = sessionStorage.getItem("ielts_records_edited_v1") === "1";
+      } catch {
+        /* */
+      }
+      if (pushFirst) {
+        await pushKeysToUserState(userId, IELTS_SYNC_KEYS);
+        try {
+          sessionStorage.removeItem("ielts_records_edited_v1");
+        } catch {
+          /* */
+        }
+      }
       await fetchUserStateAndApplyToLocalStorage(userId);
       if (!cancelled) store.reloadFromLocalStorage();
     };
@@ -2858,7 +2873,16 @@ function RecordsPanel({
   setNavHidden: (v: boolean) => void;
 }) {
   const router = useRouter();
-  const [filter, setFilter] = useState<"all" | SpeakingWritingType>("all");
+  const [filter, setFilter] = useState<"all" | SpeakingWritingType>(() => {
+    if (typeof window === "undefined") return "all";
+    try {
+      const raw = sessionStorage.getItem("ielts_records_filter_v1");
+      if (raw === "all" || raw === "writing_part1" || raw === "writing_part2" || raw === "speaking") return raw;
+    } catch {
+      /* */
+    }
+    return "all";
+  });
   const [q, setQ] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   // 列表頁已改成獨立路由 /ielts/records/[id]，此 state 僅保留相容（不再用於顯示詳情）
@@ -2915,7 +2939,18 @@ function RecordsPanel({
     return base.filter((r) => `${r.prompt}\n${r.myAnswer}\n${r.improvedAnswer}\n${r.notes ?? ""}`.toLowerCase().includes(needle));
   }, [filter, q, store.swRecords]);
 
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("ielts_records_filter_v1", filter);
+    } catch {
+      /* */
+    }
+  }, [filter]);
+
   const openAdd = () => {
+    if (filter === "writing_part1" || filter === "writing_part2" || filter === "speaking") {
+      setRtype(filter);
+    }
     setAddOpen(true);
   };
   const saveAdd = () => {

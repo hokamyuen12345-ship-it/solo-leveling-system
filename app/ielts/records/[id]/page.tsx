@@ -410,6 +410,11 @@ function writeAll(list: SpeakingWritingEntry[]) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(IELTS_SW_RECORDS_KEY, JSON.stringify(list));
+    try {
+      sessionStorage.setItem("ielts_records_edited_v1", "1");
+    } catch {
+      /* */
+    }
   } catch {
     /* */
   }

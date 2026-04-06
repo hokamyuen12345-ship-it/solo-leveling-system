@@ -380,6 +380,16 @@ function lsSet(key: string, value: unknown) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+/** 詳情頁或本 store 曾改過口說／寫作記錄：返回 /ielts 時須先上傳再拉雲端，避免舊雲端覆蓋本機 */
+function markIeltsRecordsEditedForSync() {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem("ielts_records_edited_v1", "1");
+  } catch {
+    /* */
+  }
+}
+
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
@@ -963,6 +973,7 @@ export function useIELTSStore() {
     try {
       const cur = migrateSwRecords(lsGet<unknown>(IELTS_SW_RECORDS_KEY) ?? []);
       lsSet(IELTS_SW_RECORDS_KEY, [nextRec, ...cur]);
+      markIeltsRecordsEditedForSync();
     } catch {
       /* */
     }
@@ -984,6 +995,7 @@ export function useIELTSStore() {
         // 立即寫入 localStorage：避免詳情頁刷新或快速返回時丟資料
         try {
           lsSet(IELTS_SW_RECORDS_KEY, next);
+          markIeltsRecordsEditedForSync();
         } catch {
           /* */
         }
@@ -998,6 +1010,7 @@ export function useIELTSStore() {
       const next = prev.filter((r) => r.id !== id);
       try {
         lsSet(IELTS_SW_RECORDS_KEY, next);
+        markIeltsRecordsEditedForSync();
       } catch {
         /* */
       }
@@ -1207,7 +1220,10 @@ export function useIELTSStore() {
         normalizeFlashcardReviewQueue(queueFromImport, new Set(flashcardsRef.current.map((c) => c.id))),
       );
     }
-    if (obj.swRecords) setSwRecords(obj.swRecords);
+    if (obj.swRecords) {
+      markIeltsRecordsEditedForSync();
+      setSwRecords(obj.swRecords);
+    }
     return { mode: "backup" as const };
   }, []);
 
