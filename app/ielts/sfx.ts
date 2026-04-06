@@ -17,6 +17,54 @@ function getCtx(): AudioContext | null {
   return audioCtx;
 }
 
+function trimSilence(
+  ctx: AudioContext,
+  buf: AudioBuffer,
+  opts?: { threshold?: number; padMs?: number; minMs?: number }
+): AudioBuffer {
+  const threshold = opts?.threshold ?? 0.012; // amplitude threshold
+  const padMs = opts?.padMs ?? 6; // keep a tiny lead-in/out
+  const minMs = opts?.minMs ?? 12; // don't over-trim ultra short sfx
+
+  const sr = buf.sampleRate;
+  const n = buf.length;
+  if (n <= 0) return buf;
+
+  let start = 0;
+  let end = n - 1;
+
+  const over = (i: number) => {
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      const d = buf.getChannelData(ch);
+      if (Math.abs(d[i] ?? 0) >= threshold) return true;
+    }
+    return false;
+  };
+
+  while (start < n && !over(start)) start++;
+  while (end > start && !over(end)) end--;
+
+  // If everything is "silent", just return original.
+  if (start >= end) return buf;
+
+  const pad = Math.floor((padMs / 1000) * sr);
+  start = Math.max(0, start - pad);
+  end = Math.min(n - 1, end + pad);
+
+  const trimmedLen = end - start + 1;
+  const minLen = Math.floor((minMs / 1000) * sr);
+  if (trimmedLen < minLen) return buf;
+  if (trimmedLen >= n) return buf;
+
+  const out = ctx.createBuffer(buf.numberOfChannels, trimmedLen, sr);
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const src = buf.getChannelData(ch);
+    const dst = out.getChannelData(ch);
+    dst.set(src.subarray(start, end + 1));
+  }
+  return out;
+}
+
 function playFallbackSoftClickSynth() {
   const ctx = getCtx();
   if (!ctx) return;
@@ -67,7 +115,7 @@ async function ensureClickBuffer(): Promise<AudioBuffer | null> {
       if (!res.ok) return null;
       const arr = await res.arrayBuffer();
       const buf = await ctx.decodeAudioData(arr.slice(0));
-      clickBuf = buf;
+      clickBuf = trimSilence(ctx, buf);
       clickBufFailed = false;
       return buf;
     } catch {
