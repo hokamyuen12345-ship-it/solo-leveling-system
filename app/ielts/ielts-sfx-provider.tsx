@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { playIeltsClick } from "./sfx";
+import { playIeltsClick, primeIeltsClick } from "./sfx";
 
 function isClickableEl(t: Element | null): HTMLElement | null {
   if (!t) return null;
@@ -22,6 +22,10 @@ export function IeltsSfxProvider() {
     const onPointerDown = (e: PointerEvent) => {
       // only primary button / touch
       if (typeof e.button === "number" && e.button !== 0) return;
+
+      // prime mp3 decode inside gesture (iOS-friendly)
+      primeIeltsClick();
+
       const target = e.target as Element | null;
       const clickable = isClickableEl(target);
       if (!clickable) return;

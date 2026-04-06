@@ -4,6 +4,7 @@ const IELTS_CLICK_MP3_URL = "/ielts/click.mp3";
 
 let clickBuf: AudioBuffer | null = null;
 let clickBufPromise: Promise<AudioBuffer | null> | null = null;
+let clickBufFailed = false;
 
 let audioCtx: AudioContext | null = null;
 function getCtx(): AudioContext | null {
@@ -67,8 +68,10 @@ async function ensureClickBuffer(): Promise<AudioBuffer | null> {
       const arr = await res.arrayBuffer();
       const buf = await ctx.decodeAudioData(arr.slice(0));
       clickBuf = buf;
+      clickBufFailed = false;
       return buf;
     } catch {
+      clickBufFailed = true;
       return null;
     } finally {
       clickBufPromise = null;
@@ -78,28 +81,36 @@ async function ensureClickBuffer(): Promise<AudioBuffer | null> {
   return clickBufPromise;
 }
 
+/** 預載 IELTS click mp3（需要在使用者手勢內呼叫，iOS 才可以 resume AudioContext）。 */
+export function primeIeltsClick() {
+  const ctx = getCtx();
+  if (!ctx) return;
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  void ensureClickBuffer();
+}
+
 /** IELTS 全站按鈕點擊音效（mp3）；若播放失敗則 fallback to synth。 */
 export function playIeltsClick() {
   const ctx = getCtx();
   if (!ctx) return;
   if (ctx.state === "suspended") ctx.resume().catch(() => {});
 
-  // Start loading on first click if needed.
-  void ensureClickBuffer().then((buf) => {
-    if (!buf) return;
+  if (clickBuf) {
     const t0 = ctx.currentTime;
     const src = ctx.createBufferSource();
-    src.buffer = buf;
-
+    src.buffer = clickBuf;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.22, t0); // soft
     src.connect(g);
     g.connect(ctx.destination);
-
     src.start(t0);
-  });
+    return;
+  }
 
-  // If buffer isn't ready yet, play fallback (first few taps only).
-  if (!clickBuf) playFallbackSoftClickSynth();
+  // Not ready yet: trigger load; don't play fallback (avoid hearing old synth).
+  void ensureClickBuffer();
+
+  // If decode is impossible on this device/browser, then use synth as last resort.
+  if (clickBufFailed) playFallbackSoftClickSynth();
 }
 
