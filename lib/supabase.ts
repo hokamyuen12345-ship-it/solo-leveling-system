@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient as SupabaseClientType } from "@supabase/supabase-js";
+import { IELTS_STORAGE_KEYS } from "@/app/ielts/store";
 
 export type SupabaseClient = SupabaseClientType;
 
@@ -42,3 +43,6 @@ export const SYNC_KEYS = [
   "slq_quest_overrides_v1",
   "slq_avatar_data_url_v1",
 ] as const;
+
+/** IELTS 備考：與 `IELTS_STORAGE_KEYS` 對齊，另含主題粉紅開關（存於 ielts 頁 localStorage） */
+export const IELTS_SYNC_KEYS = [...IELTS_STORAGE_KEYS, "ielts_accent_pink_v1"] as const;

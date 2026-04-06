@@ -519,7 +519,8 @@ export function useIELTSStore() {
   const [flashcardReviewQueue, setFlashcardReviewQueue] = useState<string[]>([]);
   const [swRecords, setSwRecords] = useState<SpeakingWritingEntry[]>([]);
 
-  useEffect(() => {
+  /** 從 localStorage 重新載入（雲端拉取寫入 LS 後呼叫，與初次 hydrate 邏輯相同） */
+  const reloadFromLocalStorage = useCallback(() => {
     if (typeof window === "undefined") return;
     migrateIfNeeded();
     if (localStorage.getItem(KEY_FLASHCARDS) === null) lsSet(KEY_FLASHCARDS, []);
@@ -560,6 +561,10 @@ export function useIELTSStore() {
     setSwRecords(migrateSwRecords(lsGet<unknown>(IELTS_SW_RECORDS_KEY) ?? []));
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    reloadFromLocalStorage();
+  }, [reloadFromLocalStorage]);
 
   useEffect(() => {
     if (!ready) return;
@@ -1140,6 +1145,7 @@ export function useIELTSStore() {
     updateSwRecord,
     removeSwRecord,
     clearAllLocalData,
+    reloadFromLocalStorage,
     exportAll,
     importAll,
     addFlashcardCategory,

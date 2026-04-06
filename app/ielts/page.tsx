@@ -32,6 +32,8 @@ import {
   isSwRecordWriting,
 } from "./store";
 import { useRouter } from "next/navigation";
+import { getSupabase, IELTS_SYNC_KEYS } from "@/lib/supabase";
+import { fetchUserStateAndApplyToLocalStorage, pushKeysToUserState } from "@/lib/user-state-sync";
 
 const SL_HOME_FROM_IELTS = "sl_home_from_ielts_v1";
 const IELTS_ACCENT_PINK_LS = "ielts_accent_pink_v1";
@@ -214,6 +216,43 @@ export default function IELTSPage() {
   const [clozePrefetchById, setClozePrefetchById] = useState<Record<string, ClozePayload>>({});
   const [clozePrefetchErrById, setClozePrefetchErrById] = useState<Record<string, string>>({});
   const [clozePrefetchNonce, setClozePrefetchNonce] = useState(0);
+
+  /** 登入時自雲端拉取 user_state（含 IELTS）後重新 hydrate，與主頁同步 */
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+    let cancelled = false;
+    const pullAndReload = async (userId: string) => {
+      await fetchUserStateAndApplyToLocalStorage(userId);
+      if (!cancelled) store.reloadFromLocalStorage();
+    };
+    void (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session?.user && !cancelled) await pullAndReload(session.user.id);
+    })();
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) void pullAndReload(session.user.id);
+    });
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [store.reloadFromLocalStorage]);
+
+  /** 已登入時定期上傳 IELTS 相關 localStorage 鍵（主頁也會一併上傳） */
+  useEffect(() => {
+    if (!store.ready) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    const tick = async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session?.user) return;
+      await pushKeysToUserState(session.user.id, IELTS_SYNC_KEYS);
+    };
+    void tick();
+    const id = window.setInterval(tick, 5000);
+    return () => window.clearInterval(id);
+  }, [store.ready]);
 
   const cardsContentFingerprint = useMemo(
     () => store.flashcards.map((f) => `${f.id}\t${f.word}\t${f.meaning}`).join("\n"),
@@ -3502,6 +3541,20 @@ function SettingsTab({
             />
           </label>
         </div>
+      </div>
+
+      <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>
+        <div className="ielts-text-heading" style={{ marginBottom: 10 }}>
+          帳號同步
+        </div>
+        <p className="ielts-text-caption" style={{ margin: 0, lineHeight: 1.55, color: "var(--ielts-text-2)" }}>
+          在首頁使用與主系統相同的 Supabase 登入時，備考資料會與雲端{" "}
+          <code style={{ fontSize: 11 }}>user_state</code> 同步：進入本頁會先下載合併，之後約每 5 秒上傳變更。主頁開啟時也會一併上傳。Google
+          AI 金鑰僅存本機、不會上傳。
+        </p>
+        <p className="ielts-text-caption" style={{ margin: "10px 0 0", lineHeight: 1.5, color: "var(--ielts-text-3)", fontSize: 12 }}>
+          附圖或大量字卡可能使資料過大導致同步失敗，可改用下方「匯出備份」手動轉移。
+        </p>
       </div>
 
       <div className="ielts-card-static ielts-enter" style={{ padding: 18 }}>

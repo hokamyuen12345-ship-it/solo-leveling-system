@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { getSupabase, SYNC_KEYS } from "@/lib/supabase";
+import { getSupabase, IELTS_SYNC_KEYS, SYNC_KEYS } from "@/lib/supabase";
+import { fetchUserStateAndApplyToLocalStorage, pushKeysToUserState } from "@/lib/user-state-sync";
 import {
   clearMissionTimerSession,
   clearPendingExpire,
@@ -2281,19 +2282,7 @@ export default function Home() {
       }
       setSyncStatus("pending");
       try {
-        const { data: rows } = await supabase.from("user_state").select("key, value").eq("user_id", session.user.id);
-        if (rows?.length) {
-          for (const row of rows) {
-            const key = row.key as string;
-            const val = row.value;
-            if (typeof key === "string" && val !== undefined) {
-              try {
-                if (key === "slq_voice_enabled") localStorage.setItem(key, String(val));
-                else localStorage.setItem(key, JSON.stringify(val));
-              } catch {}
-            }
-          }
-        }
+        await fetchUserStateAndApplyToLocalStorage(session.user.id);
       } catch {
         // keep local data
       }
@@ -2438,16 +2427,7 @@ export default function Home() {
     if (user && sb) {
       (async () => {
         try {
-          for (const key of SYNC_KEYS) {
-            const raw = localStorage.getItem(key);
-            const value = key === "slq_voice_enabled" ? (raw === "true") : (raw ? JSON.parse(raw) : null);
-            if (value !== null && value !== undefined) {
-              await sb.from("user_state").upsert(
-                { user_id: user.id, key, value, updated_at: new Date().toISOString() },
-                { onConflict: "user_id,key" }
-              );
-            }
-          }
+          await pushKeysToUserState(user.id, [...SYNC_KEYS, ...IELTS_SYNC_KEYS]);
         } catch {}
       })();
     }
@@ -2471,16 +2451,7 @@ export default function Home() {
     if (!sb) return;
     const sync = async () => {
       try {
-        for (const key of SYNC_KEYS) {
-          const raw = localStorage.getItem(key);
-          const value = key === "slq_voice_enabled" ? (raw === "true") : (raw ? JSON.parse(raw) : null);
-          if (value !== null && value !== undefined) {
-            await sb.from("user_state").upsert(
-              { user_id: user.id, key, value, updated_at: new Date().toISOString() },
-              { onConflict: "user_id,key" }
-            );
-          }
-        }
+        await pushKeysToUserState(user.id, [...SYNC_KEYS, ...IELTS_SYNC_KEYS]);
       } catch {}
     };
     const id = setInterval(sync, 5000);
