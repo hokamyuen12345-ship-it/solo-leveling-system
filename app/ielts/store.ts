@@ -199,7 +199,7 @@ export type SpeakingWritingEntry = {
   id: string;
   type: SpeakingWritingType;
   prompt: string;
-  /** Band (1–9) */
+  /** Band (1–9, step 0.5) */
   band?: number;
   myAnswer: string;
   improvedAnswer: string;
@@ -355,7 +355,7 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
     const prompt = typeof obj.prompt === "string" ? obj.prompt : null;
     const bandRaw = obj.band;
     const bandNum = typeof bandRaw === "number" ? bandRaw : typeof bandRaw === "string" ? Number(bandRaw) : NaN;
-    const band = Number.isFinite(bandNum) ? Math.round(bandNum) : undefined;
+    const band = Number.isFinite(bandNum) ? Math.round(bandNum * 2) / 2 : undefined;
     const bandClamped = typeof band === "number" ? Math.max(1, Math.min(9, band)) : undefined;
     const createdAt = typeof obj.createdAt === "string" ? obj.createdAt : todayIso();
     const updatedAt = typeof obj.updatedAt === "string" ? obj.updatedAt : createdAt;
@@ -1010,7 +1010,7 @@ export function useIELTSStore() {
       const notes = item.notes?.trim() ? item.notes.trim() : undefined;
       const commonMistakes = typeof item.commonMistakes === "string" ? item.commonMistakes : undefined;
       const band =
-        typeof item.band === "number" && Number.isFinite(item.band) ? Math.max(1, Math.min(9, Math.round(item.band))) : undefined;
+        typeof item.band === "number" && Number.isFinite(item.band) ? Math.max(1, Math.min(9, Math.round(item.band * 2) / 2)) : undefined;
       setSwRecords((prev) => {
         const next = prev.map((r) =>
           r.id === id

@@ -2835,7 +2835,8 @@ function recordTypeLabel(t: SpeakingWritingType): string {
 }
 
 function bandMeta(band: number): { label: string; bg: string; fg: string; border: string; weight: number } {
-  const b = Math.max(1, Math.min(9, Math.round(band)));
+  const b0 = Math.max(1, Math.min(9, Math.round(band * 2) / 2));
+  const b = Math.max(1, Math.min(9, Math.round(b0)));
   const table: Record<number, { bg: string; fg: string; border: string; weight: number }> = {
     1: { bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca", weight: 800 },
     2: { bg: "#fff7ed", fg: "#c2410c", border: "#fed7aa", weight: 800 },
@@ -2848,7 +2849,8 @@ function bandMeta(band: number): { label: string; bg: string; fg: string; border
     9: { bg: "#f5f3ff", fg: "#6d28d9", border: "#ddd6fe", weight: 950 },
   };
   const t = table[b] ?? table[6];
-  return { label: `B${b}`, ...t };
+  const label = Number.isInteger(b0) ? `B${b0}` : `B${b0.toFixed(1)}`;
+  return { label, ...t };
 }
 
 function recordQuestions(t: SpeakingWritingType): string[] {
@@ -2944,7 +2946,7 @@ function RecordsPanel({
           ? (cur.band ?? undefined)
           : (() => {
               const n = Number(editRecordBand);
-              return Number.isFinite(n) ? Math.max(1, Math.min(9, Math.round(n))) : (cur.band ?? undefined);
+              return Number.isFinite(n) ? Math.max(1, Math.min(9, Math.round(n * 2) / 2)) : (cur.band ?? undefined);
             })(),
       notes: editRecordNotes.trim() || undefined,
     });
@@ -3269,13 +3271,13 @@ function RecordsPanel({
               </select>
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
-              Banding（1–9）
+              Banding（1–9，可 0.5）
               <input
                 className="ielts-input"
-                inputMode="numeric"
+                inputMode="decimal"
                 value={editRecordBand}
                 onChange={(e) => setEditRecordBand(e.target.value)}
-                placeholder="例如：6"
+                placeholder="例如：6.5"
               />
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
