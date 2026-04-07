@@ -2834,6 +2834,23 @@ function recordTypeLabel(t: SpeakingWritingType): string {
   return "Speaking";
 }
 
+function bandMeta(band: number): { label: string; bg: string; fg: string; border: string; weight: number } {
+  const b = Math.max(1, Math.min(9, Math.round(band)));
+  const table: Record<number, { bg: string; fg: string; border: string; weight: number }> = {
+    1: { bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca", weight: 800 },
+    2: { bg: "#fff7ed", fg: "#c2410c", border: "#fed7aa", weight: 800 },
+    3: { bg: "#fffbeb", fg: "#b45309", border: "#fde68a", weight: 800 },
+    4: { bg: "#fefce8", fg: "#a16207", border: "#fef08a", weight: 800 },
+    5: { bg: "#f7fee7", fg: "#3f6212", border: "#d9f99d", weight: 850 },
+    6: { bg: "#ecfdf5", fg: "#047857", border: "#a7f3d0", weight: 850 },
+    7: { bg: "#ecfeff", fg: "#0e7490", border: "#a5f3fc", weight: 900 },
+    8: { bg: "#eff6ff", fg: "#1d4ed8", border: "#bfdbfe", weight: 900 },
+    9: { bg: "#f5f3ff", fg: "#6d28d9", border: "#ddd6fe", weight: 950 },
+  };
+  const t = table[b] ?? table[6];
+  return { label: `B${b}`, ...t };
+}
+
 function recordQuestions(t: SpeakingWritingType): string[] {
   if (t === "writing_part1") {
     return [
@@ -2896,11 +2913,13 @@ function RecordsPanel({
   const [editRecordType, setEditRecordType] = useState<SpeakingWritingType>("writing_part2");
   const [editRecordPrompt, setEditRecordPrompt] = useState("");
   const [editRecordNotes, setEditRecordNotes] = useState("");
+  const [editRecordBand, setEditRecordBand] = useState("");
 
   const openRecordSettings = (r: SpeakingWritingEntry) => {
     setEditRecordType(r.type);
     setEditRecordPrompt(r.prompt);
     setEditRecordNotes(r.notes ?? "");
+    setEditRecordBand(typeof r.band === "number" ? String(r.band) : "");
     setRecordSettingsId(r.id);
   };
 
@@ -2920,6 +2939,13 @@ function RecordsPanel({
       myAnswer: cur.myAnswer,
       improvedAnswer: cur.improvedAnswer,
       commonMistakes: cur.commonMistakes ?? "",
+      band:
+        editRecordBand.trim() === ""
+          ? (cur.band ?? undefined)
+          : (() => {
+              const n = Number(editRecordBand);
+              return Number.isFinite(n) ? Math.max(1, Math.min(9, Math.round(n))) : (cur.band ?? undefined);
+            })(),
       notes: editRecordNotes.trim() || undefined,
     });
     closeRecordSettings();
@@ -3146,28 +3172,71 @@ function RecordsPanel({
                   點擊進入，寫「我的答案 / 進階版本」
                 </div>
               </div>
-              <button
-                type="button"
-                className="ielts-btn"
-                aria-label="記錄設定"
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  openRecordSettings(r);
-                }}
-                style={{
-                  flexShrink: 0,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: "1px solid var(--ielts-border-light)",
-                  background: "var(--ielts-bg-hover)",
-                  color: "var(--ielts-text-2)",
-                  cursor: "pointer",
-                }}
-              >
-                設定
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end", flexShrink: 0 }}>
+                {typeof r.band === "number" ? (
+                  <span
+                    className="ielts-text-caption"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minWidth: 44,
+                      height: 28,
+                      padding: "0 10px",
+                      borderRadius: 999,
+                      border: `1px solid ${bandMeta(r.band).border}`,
+                      background: bandMeta(r.band).bg,
+                      color: bandMeta(r.band).fg,
+                      fontWeight: bandMeta(r.band).weight,
+                      letterSpacing: 0.2,
+                    }}
+                    title="Banding"
+                  >
+                    {bandMeta(r.band).label}
+                  </span>
+                ) : (
+                  <span
+                    className="ielts-text-caption"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minWidth: 44,
+                      height: 28,
+                      padding: "0 10px",
+                      borderRadius: 999,
+                      border: "1px dashed var(--ielts-border-light)",
+                      background: "transparent",
+                      color: "var(--ielts-text-3)",
+                      fontWeight: 700,
+                    }}
+                    title="尚未設定 Banding"
+                  >
+                    ——
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="ielts-btn"
+                  aria-label="記錄設定"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    openRecordSettings(r);
+                  }}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--ielts-border-light)",
+                    background: "var(--ielts-bg-hover)",
+                    color: "var(--ielts-text-2)",
+                    cursor: "pointer",
+                  }}
+                >
+                  設定
+                </button>
+              </div>
             </div>
           </div>
         ))
@@ -3198,6 +3267,16 @@ function RecordsPanel({
                 <option value="writing">Writing（舊版，等同 Part 2）</option>
                 <option value="speaking">Speaking</option>
               </select>
+            </label>
+            <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+              Banding（1–9）
+              <input
+                className="ielts-input"
+                inputMode="numeric"
+                value={editRecordBand}
+                onChange={(e) => setEditRecordBand(e.target.value)}
+                placeholder="例如：6"
+              />
             </label>
             <label className="ielts-text-caption" style={{ display: "grid", gap: 6, marginBottom: 10 }}>
               題目（重新命名／編輯）

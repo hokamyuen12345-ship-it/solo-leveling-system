@@ -199,6 +199,8 @@ export type SpeakingWritingEntry = {
   id: string;
   type: SpeakingWritingType;
   prompt: string;
+  /** Band (1–9) */
+  band?: number;
   myAnswer: string;
   improvedAnswer: string;
   /** 常犯錯誤／錯誤位置筆記（可含與答案相同嘅高亮標記語法） */
@@ -351,6 +353,10 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
         ? (tr as SpeakingWritingType)
         : null;
     const prompt = typeof obj.prompt === "string" ? obj.prompt : null;
+    const bandRaw = obj.band;
+    const bandNum = typeof bandRaw === "number" ? bandRaw : typeof bandRaw === "string" ? Number(bandRaw) : NaN;
+    const band = Number.isFinite(bandNum) ? Math.round(bandNum) : undefined;
+    const bandClamped = typeof band === "number" ? Math.max(1, Math.min(9, band)) : undefined;
     const createdAt = typeof obj.createdAt === "string" ? obj.createdAt : todayIso();
     const updatedAt = typeof obj.updatedAt === "string" ? obj.updatedAt : createdAt;
     if (!id || !type || !prompt) continue;
@@ -367,6 +373,7 @@ export function migrateSwRecords(raw: unknown): SpeakingWritingEntry[] {
       id,
       type,
       prompt,
+      ...(typeof bandClamped === "number" ? { band: bandClamped } : {}),
       myAnswer,
       improvedAnswer,
       ...(commonMistakes ? { commonMistakes } : {}),
@@ -966,6 +973,7 @@ export function useIELTSStore() {
       id,
       type: item.type,
       prompt,
+      band: undefined,
       myAnswer: "",
       improvedAnswer: "",
       commonMistakes: "",
@@ -991,6 +999,7 @@ export function useIELTSStore() {
       item: Pick<SpeakingWritingEntry, "type" | "prompt" | "myAnswer" | "improvedAnswer"> & {
         notes?: string;
         commonMistakes?: string;
+        band?: number;
       },
     ) => {
       const iso = todayIso();
@@ -1000,6 +1009,8 @@ export function useIELTSStore() {
       if (!prompt) return;
       const notes = item.notes?.trim() ? item.notes.trim() : undefined;
       const commonMistakes = typeof item.commonMistakes === "string" ? item.commonMistakes : undefined;
+      const band =
+        typeof item.band === "number" && Number.isFinite(item.band) ? Math.max(1, Math.min(9, Math.round(item.band))) : undefined;
       setSwRecords((prev) => {
         const next = prev.map((r) =>
           r.id === id
@@ -1007,6 +1018,7 @@ export function useIELTSStore() {
                 ...r,
                 type: item.type,
                 prompt,
+                ...(band !== undefined ? { band } : {}),
                 myAnswer,
                 improvedAnswer,
                 ...(commonMistakes !== undefined ? { commonMistakes } : {}),
