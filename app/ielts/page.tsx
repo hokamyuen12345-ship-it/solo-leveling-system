@@ -2836,7 +2836,7 @@ function recordTypeLabel(t: SpeakingWritingType): string {
 
 function bandMeta(band: number): { label: string; bg: string; fg: string; border: string; weight: number } {
   const b0 = Math.max(1, Math.min(9, Math.round(band * 2) / 2));
-  const label = Number.isInteger(b0) ? `B${b0}` : `B${b0.toFixed(1)}`;
+  const label = Number.isInteger(b0) ? `${b0}` : b0.toFixed(1);
 
   // Color rules:
   // 1.0–5.5 => red
