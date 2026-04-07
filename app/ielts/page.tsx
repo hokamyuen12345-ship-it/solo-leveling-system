@@ -2836,21 +2836,17 @@ function recordTypeLabel(t: SpeakingWritingType): string {
 
 function bandMeta(band: number): { label: string; bg: string; fg: string; border: string; weight: number } {
   const b0 = Math.max(1, Math.min(9, Math.round(band * 2) / 2));
-  const b = Math.max(1, Math.min(9, Math.round(b0)));
-  const table: Record<number, { bg: string; fg: string; border: string; weight: number }> = {
-    1: { bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca", weight: 800 },
-    2: { bg: "#fff7ed", fg: "#c2410c", border: "#fed7aa", weight: 800 },
-    3: { bg: "#fffbeb", fg: "#b45309", border: "#fde68a", weight: 800 },
-    4: { bg: "#fefce8", fg: "#a16207", border: "#fef08a", weight: 800 },
-    5: { bg: "#f7fee7", fg: "#3f6212", border: "#d9f99d", weight: 850 },
-    6: { bg: "#ecfdf5", fg: "#047857", border: "#a7f3d0", weight: 850 },
-    7: { bg: "#ecfeff", fg: "#0e7490", border: "#a5f3fc", weight: 900 },
-    8: { bg: "#eff6ff", fg: "#1d4ed8", border: "#bfdbfe", weight: 900 },
-    9: { bg: "#f5f3ff", fg: "#6d28d9", border: "#ddd6fe", weight: 950 },
-  };
-  const t = table[b] ?? table[6];
   const label = Number.isInteger(b0) ? `B${b0}` : `B${b0.toFixed(1)}`;
-  return { label, ...t };
+
+  // Color rules:
+  // 1.0–5.5 => red
+  // 6.0     => yellow
+  // 6.5     => green
+  // >= 7.0  => gold
+  if (b0 <= 5.5) return { label, bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca", weight: 900 };
+  if (b0 === 6) return { label, bg: "#fffbeb", fg: "#b45309", border: "#fde68a", weight: 900 };
+  if (b0 === 6.5) return { label, bg: "#ecfdf5", fg: "#047857", border: "#a7f3d0", weight: 950 };
+  return { label, bg: "#fff7ed", fg: "#a16207", border: "#fed7aa", weight: 950 };
 }
 
 function recordQuestions(t: SpeakingWritingType): string[] {
