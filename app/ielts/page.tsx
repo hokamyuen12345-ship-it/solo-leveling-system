@@ -2991,6 +2991,18 @@ function RecordsPanel({
     if (id) {
       setActiveId(id);
       try { sessionStorage.setItem("ielts_last_tab_v1", "records"); } catch {}
+      // Best-effort: push records immediately so reload on another device won't lose it.
+      void (async () => {
+        try {
+          const sb = getSupabase();
+          if (!sb) return;
+          const { data: { session } } = await sb.auth.getSession();
+          if (!session?.user) return;
+          await pushKeysToUserState(session.user.id, IELTS_SYNC_KEYS);
+        } catch {
+          /* offline / payload too large: periodic push will retry */
+        }
+      })();
       router.push(`/ielts/records/${id}`);
     }
   };
