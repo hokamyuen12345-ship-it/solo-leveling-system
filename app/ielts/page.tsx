@@ -2842,11 +2842,11 @@ function bandMeta(band: number): { label: string; bg: string; fg: string; border
   // 1.0–5.5 => red
   // 6.0     => yellow
   // 6.5     => green
-  // >= 7.0  => gold
+  // >= 7.0  => purple
   if (b0 <= 5.5) return { label, bg: "#fef2f2", fg: "#b91c1c", border: "#fecaca", weight: 900 };
   if (b0 === 6) return { label, bg: "#fffbeb", fg: "#b45309", border: "#fde68a", weight: 900 };
   if (b0 === 6.5) return { label, bg: "#ecfdf5", fg: "#047857", border: "#a7f3d0", weight: 950 };
-  return { label, bg: "#fff7ed", fg: "#a16207", border: "#fed7aa", weight: 950 };
+  return { label, bg: "#f5f3ff", fg: "#6d28d9", border: "#ddd6fe", weight: 950 };
 }
 
 function recordQuestions(t: SpeakingWritingType): string[] {
