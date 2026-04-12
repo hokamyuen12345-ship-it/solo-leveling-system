@@ -3902,6 +3902,9 @@ function SettingsTab({
         <div className="ielts-text-heading" style={{ marginBottom: 14 }}>
           備份
         </div>
+        <p className="ielts-text-caption" style={{ marginBottom: 12, lineHeight: 1.45 }}>
+          與主頁「LOCAL BACKUP」相同理念：匯出為 JSON；匯入會與本機合併，字卡／口寫筆紀等以 id 去重，避免重複舊紀錄。
+        </p>
         <button type="button" className="ielts-btn" onClick={download} style={{ ...solidBtn(), width: "100%" }}>
           匯出備份（JSON）
         </button>

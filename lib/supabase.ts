@@ -39,9 +39,12 @@ export const SYNC_KEYS = [
   "slq_hidden_quest_ids_v1",
   /** 從 Danger Zone 隱藏的內建懲罰 id（8–12），可還原 */
   "slq_hidden_builtin_debuffs_v1",
+  /** 自訂 Danger Zone 懲罰（與本機 JSON 備份一致） */
+  "slq_custom_debuffs_v1",
   /** 任務名稱／EXP／時長覆寫 — 影響 Top Priority 排序與顯示，需跨裝置一致 */
   "slq_quest_overrides_v1",
   "slq_avatar_data_url_v1",
+  "slq_skills_v1",
 ] as const;
 
 /** IELTS 備考：與 `IELTS_STORAGE_KEYS` 對齊，另含主題粉紅開關（存於 ielts 頁 localStorage） */
