@@ -57,8 +57,9 @@ const IELTS_KEY_TO_EXPORT = [
 function loadEnvLocal() {
   try {
     const p = join(root, ".env.local");
-    const raw = readFileSync(p, "utf8");
-    for (const line of raw.split("\n")) {
+    let raw = readFileSync(p, "utf8");
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    for (const line of raw.split(/\r?\n/)) {
       const t = line.trim();
       if (!t || t.startsWith("#")) continue;
       const i = t.indexOf("=");
@@ -71,7 +72,8 @@ function loadEnvLocal() {
       ) {
         v = v.slice(1, -1);
       }
-      if (process.env[k] === undefined) process.env[k] = v;
+      if (!k || !v) continue;
+      process.env[k] = v;
     }
   } catch {
     /* no .env.local */
@@ -80,15 +82,14 @@ function loadEnvLocal() {
 
 loadEnvLocal();
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "").trim();
+const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 
 const arg = process.argv[2];
 
 if (!url || !serviceKey) {
-  console.error(
-    "缺少 NEXT_PUBLIC_SUPABASE_URL（或 SUPABASE_URL）或 SUPABASE_SERVICE_ROLE_KEY。請寫入 .env.local 後再執行。",
-  );
+  const miss = [!url && "NEXT_PUBLIC_SUPABASE_URL（或 SUPABASE_URL）", !serviceKey && "SUPABASE_SERVICE_ROLE_KEY"].filter(Boolean);
+  console.error(`缺少：${miss.join("、")}。請喺專案根目錄 .env.local 各一行（無空格圍住 =），然後再執行。`);
   process.exit(1);
 }
 
