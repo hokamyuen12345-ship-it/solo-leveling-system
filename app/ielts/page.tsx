@@ -230,15 +230,27 @@ export default function IELTSPage() {
       } catch {
         /* */
       }
-      if (pushFirst) {
-        await pushKeysToUserState(userId, IELTS_SYNC_KEYS);
-        try {
-          sessionStorage.removeItem("ielts_records_edited_v1");
-        } catch {
-          /* */
-        }
+      const pullMs = 18_000;
+      try {
+        await Promise.race([
+          (async () => {
+            if (pushFirst) {
+              await pushKeysToUserState(userId, IELTS_SYNC_KEYS);
+              try {
+                sessionStorage.removeItem("ielts_records_edited_v1");
+              } catch {
+                /* */
+              }
+            }
+            await fetchUserStateAndApplyToLocalStorage(userId);
+          })(),
+          new Promise<never>((_, reject) => {
+            window.setTimeout(() => reject(new Error("cloud_pull_timeout")), pullMs);
+          }),
+        ]);
+      } catch {
+        /* Supabase 慢／Disk IO 爆：仍用本機 */
       }
-      await fetchUserStateAndApplyToLocalStorage(userId);
       if (!cancelled) store.reloadFromLocalStorage();
     };
     void (async () => {

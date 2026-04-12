@@ -2360,10 +2360,16 @@ export default function Home() {
         return;
       }
       setSyncStatus("pending");
+      const pullMs = 18_000;
       try {
-        await fetchUserStateAndApplyToLocalStorage(session.user.id);
+        await Promise.race([
+          fetchUserStateAndApplyToLocalStorage(session.user.id),
+          new Promise<never>((_, reject) => {
+            window.setTimeout(() => reject(new Error("cloud_pull_timeout")), pullMs);
+          }),
+        ]);
       } catch {
-        // keep local data
+        // keep local data (network / Supabase slow or Disk IO exhausted)
       }
       setSyncStatus("synced");
     };
