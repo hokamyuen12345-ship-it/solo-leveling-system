@@ -139,20 +139,42 @@ const adminHeaders = {
   Authorization: `Bearer ${serviceKey}`,
 };
 
-/** 用 email 搵 user_id：先試輕量 REST，避免 listUsers 喺慢／Unhealthy 專案卡住 */
+async function fetchWithTimeout(href, options, ms) {
+  const ac = new AbortController();
+  const id = setTimeout(() => ac.abort(), ms);
+  try {
+    return await fetch(href, { ...options, signal: ac.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/** 用 email 搵 user_id：先試輕量 REST（有逾時），避免無限卡住 */
 async function resolveUserIdFromEmail(email) {
   const base = url.replace(/\/$/, "");
   const tryPaths = [
     `/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
     `/auth/v1/admin/users?filter=${encodeURIComponent(email)}`,
   ];
+  const fetchMs = 22_000;
   for (const path of tryPaths) {
-    const res = await fetch(`${base}${path}`, { headers: adminHeaders });
-    const json = await res.json().catch(() => ({}));
-    const users = json.users;
-    if (res.ok && Array.isArray(users) && users.length > 0) {
-      const hit = users.find((x) => (x.email || "").toLowerCase() === email.toLowerCase()) ?? users[0];
-      if (hit?.id) return hit.id;
+    const href = `${base}${path}`;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`嘗試查 user（${attempt}/2，逾時 ${fetchMs / 1000}s）…`);
+        const res = await fetchWithTimeout(href, { headers: adminHeaders }, fetchMs);
+        const json = await res.json().catch(() => ({}));
+        const users = json.users;
+        if (res.ok && Array.isArray(users) && users.length > 0) {
+          const hit = users.find((x) => (x.email || "").toLowerCase() === email.toLowerCase()) ?? users[0];
+          if (hit?.id) return hit.id;
+        }
+        break;
+      } catch (e) {
+        const msg = e?.cause?.message || e?.message || String(e);
+        console.log(`  失敗：${msg}`);
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+      }
     }
   }
 
@@ -186,11 +208,13 @@ async function resolveUserId() {
 async function main() {
   console.log("開始：連線 Supabase 並查 user…");
   const userId = await resolveUserId();
-  console.log(`已解析 user_id，讀取 user_state…`);
-  const { data: rows, error } = await supabase
-    .from("user_state")
-    .select("key,value")
-    .eq("user_id", userId);
+  console.log(`已解析 user_id，讀取 user_state（最多等 120s）…`);
+  const stateMs = 120_000;
+  const statePromise = supabase.from("user_state").select("key,value").eq("user_id", userId);
+  const stateTimeout = new Promise((_, rej) =>
+    setTimeout(() => rej(new Error("讀取 user_state 逾時 120s。請換網絡／關 VPN 再試，或喺 Dashboard 用 SQL 匯出。")), stateMs),
+  );
+  const { data: rows, error } = await Promise.race([statePromise, stateTimeout]);
 
   if (error) throw error;
 
@@ -248,6 +272,10 @@ main().catch((e) => {
   console.error("失敗：", e?.message || e);
   if (e && typeof e === "object" && e !== null && !e.message && Object.keys(e).length === 0) {
     console.error("（收到空錯誤物件；多數係網絡中斷或 TLS，請再試或改用 UUID）");
+  }
+  const m = String(e?.message || e?.cause?.message || "");
+  if (/fetch|socket|TLS|ECONNRESET|UND_ERR/i.test(m)) {
+    console.error("\n網絡建議：換 Wi‑Fi／關 VPN／改用手機熱點；或用 UUID 跳過 email 查詢：\n  npm run export-rescue -- 你的User-UUID");
   }
   process.exit(1);
 });
