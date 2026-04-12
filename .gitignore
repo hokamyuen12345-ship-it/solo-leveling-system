@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# 本機救援匯出（含個人資料，勿提交）
+/exports/
+
 # production
 /build
 
