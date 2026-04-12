@@ -64,7 +64,7 @@ function loadEnvLocal() {
       if (!t || t.startsWith("#")) continue;
       const i = t.indexOf("=");
       if (i === -1) continue;
-      const k = t.slice(0, i).trim();
+      const k = t.slice(0, i).trim().replace(/^\uFEFF/, "");
       let v = t.slice(i + 1).trim();
       if (
         (v.startsWith('"') && v.endsWith('"')) ||
@@ -72,11 +72,32 @@ function loadEnvLocal() {
       ) {
         v = v.slice(1, -1);
       }
-      if (!k || !v) continue;
+      if (!k) continue;
       process.env[k] = v;
     }
   } catch {
     /* no .env.local */
+  }
+}
+
+/** 只列出變數名，唔顯示值，方便對照有冇打錯字 */
+function listEnvLocalKeyNames() {
+  try {
+    const p = join(root, ".env.local");
+    let raw = readFileSync(p, "utf8");
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    const names = [];
+    for (const line of raw.split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      const i = t.indexOf("=");
+      if (i === -1) continue;
+      const k = t.slice(0, i).trim().replace(/^\uFEFF/, "");
+      if (k) names.push(k);
+    }
+    return names;
+  } catch {
+    return [];
   }
 }
 
@@ -89,7 +110,16 @@ const arg = process.argv[2];
 
 if (!url || !serviceKey) {
   const miss = [!url && "NEXT_PUBLIC_SUPABASE_URL（或 SUPABASE_URL）", !serviceKey && "SUPABASE_SERVICE_ROLE_KEY"].filter(Boolean);
-  console.error(`缺少：${miss.join("、")}。請喺專案根目錄 .env.local 各一行（無空格圍住 =），然後再執行。`);
+  console.error(`缺少：${miss.join("、")}。請喺專案根目錄 .env.local 加齊。`);
+  const names = listEnvLocalKeyNames();
+  if (names.length) {
+    console.error(`\n而家 .env.local 偵測到嘅變數名（請確認有「SUPABASE_SERVICE_ROLE_KEY」，同埋值唔係空白）：\n  ${names.join("\n  ")}`);
+  } else {
+    console.error(`\n讀唔到 .env.local 入面有效嘅 KEY=值 行（檔案係咪喺專案根目錄？）\n  預期路徑: ${join(root, ".env.local")}`);
+  }
+  if (!serviceKey && names.some((n) => /service|role|secret/i.test(n) && n !== "SUPABASE_SERVICE_ROLE_KEY")) {
+    console.error("\n提示：Supabase 後台複製嘅係 **service_role** 金鑰，變數名必須係 SUPABASE_SERVICE_ROLE_KEY（唔係 anon key）。");
+  }
   process.exit(1);
 }
 
