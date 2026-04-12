@@ -134,24 +134,59 @@ const supabase = createClient(url, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-async function resolveUserId() {
-  if (arg.includes("@")) {
-    const { data, error } = await supabase.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-    if (error) throw error;
-    const u = data.users.find(
-      (x) => (x.email || "").toLowerCase() === arg.toLowerCase(),
-    );
-    if (!u) throw new Error(`找不到 email：${arg}`);
-    return u.id;
+const adminHeaders = {
+  apikey: serviceKey,
+  Authorization: `Bearer ${serviceKey}`,
+};
+
+/** 用 email 搵 user_id：先試輕量 REST，避免 listUsers 喺慢／Unhealthy 專案卡住 */
+async function resolveUserIdFromEmail(email) {
+  const base = url.replace(/\/$/, "");
+  const tryPaths = [
+    `/auth/v1/admin/users?email=${encodeURIComponent(email)}`,
+    `/auth/v1/admin/users?filter=${encodeURIComponent(email)}`,
+  ];
+  for (const path of tryPaths) {
+    const res = await fetch(`${base}${path}`, { headers: adminHeaders });
+    const json = await res.json().catch(() => ({}));
+    const users = json.users;
+    if (res.ok && Array.isArray(users) && users.length > 0) {
+      const hit = users.find((x) => (x.email || "").toLowerCase() === email.toLowerCase()) ?? users[0];
+      if (hit?.id) return hit.id;
+    }
   }
+
+  const timeoutMs = 90_000;
+  console.log(`REST 無法用 email 直接查到，改用 listUsers（最多等 ${timeoutMs / 1000}s）…`);
+  const listPromise = supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const timeoutPromise = new Promise((_, rej) =>
+    setTimeout(
+      () =>
+        rej(
+          new Error(
+            `listUsers 超過 ${timeoutMs / 1000} 秒無回應。Supabase 可能好慢／Unhealthy。\n請到 Dashboard → Authentication → Users 複製你帳號嘅 UUID，再執行：\n  npm run export-rescue -- 貼上UUID`,
+          ),
+        ),
+      timeoutMs,
+    ),
+  );
+  const listed = await Promise.race([listPromise, timeoutPromise]);
+  const { data, error } = listed;
+  if (error) throw error;
+  const u = data?.users?.find((x) => (x.email || "").toLowerCase() === email.toLowerCase());
+  if (!u) throw new Error(`找不到 email：${email}`);
+  return u.id;
+}
+
+async function resolveUserId() {
+  if (arg.includes("@")) return resolveUserIdFromEmail(arg);
   return arg;
 }
 
 async function main() {
+  console.log("開始：連線 Supabase 並查 user…");
   const userId = await resolveUserId();
+  console.log(`已解析 user_id，讀取 user_state…`);
   const { data: rows, error } = await supabase
     .from("user_state")
     .select("key,value")
@@ -210,6 +245,9 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e.message || e);
+  console.error("失敗：", e?.message || e);
+  if (e && typeof e === "object" && e !== null && !e.message && Object.keys(e).length === 0) {
+    console.error("（收到空錯誤物件；多數係網絡中斷或 TLS，請再試或改用 UUID）");
+  }
   process.exit(1);
 });
