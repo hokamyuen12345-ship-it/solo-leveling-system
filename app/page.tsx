@@ -2553,7 +2553,7 @@ export default function Home() {
         await pushKeysToUserState(user.id, [...SYNC_KEYS, ...IELTS_SYNC_KEYS]);
       } catch {}
     };
-    const id = setInterval(sync, 5000);
+    const id = setInterval(sync, 60_000);
     return () => clearInterval(id);
   }, [loaded, user]);
 

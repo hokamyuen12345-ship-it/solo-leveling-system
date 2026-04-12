@@ -277,7 +277,7 @@ export default function IELTSPage() {
       await pushKeysToUserState(session.user.id, IELTS_SYNC_KEYS);
     };
     void tick();
-    const id = window.setInterval(tick, 5000);
+    const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
   }, [store.ready]);
 
@@ -3860,7 +3860,7 @@ function SettingsTab({
         </div>
         <p className="ielts-text-caption" style={{ margin: 0, lineHeight: 1.55, color: "var(--ielts-text-2)" }}>
           在首頁使用與主系統相同的 Supabase 登入時，備考資料會與雲端{" "}
-          <code style={{ fontSize: 11 }}>user_state</code> 同步：進入本頁會先下載合併，之後約每 5 秒上傳變更。主頁開啟時也會一併上傳。Google
+          <code style={{ fontSize: 11 }}>user_state</code> 同步：進入本頁會先下載合併，之後約每 1 分鐘上傳變更（減輕資料庫負載）。主頁開啟時也會一併上傳。Google
           AI 金鑰僅存本機、不會上傳。
         </p>
         <p className="ielts-text-caption" style={{ margin: "10px 0 0", lineHeight: 1.5, color: "var(--ielts-text-3)", fontSize: 12 }}>

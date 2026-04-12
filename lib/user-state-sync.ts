@@ -175,14 +175,19 @@ function readLocalStorageValueForSync(key: string): unknown | null {
 export async function pushKeysToUserState(userId: string, keys: readonly string[]): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
+  const updatedAt = new Date().toISOString();
+  const rows: { user_id: string; key: string; value: unknown; updated_at: string }[] = [];
+  for (const key of keys) {
+    const value = readLocalStorageValueForSync(key);
+    if (value === null || value === undefined) continue;
+    rows.push({ user_id: userId, key, value, updated_at: updatedAt });
+  }
+  if (!rows.length) return;
+  const chunkSize = 8;
   try {
-    for (const key of keys) {
-      const value = readLocalStorageValueForSync(key);
-      if (value === null || value === undefined) continue;
-      await sb.from("user_state").upsert(
-        { user_id: userId, key, value, updated_at: new Date().toISOString() },
-        { onConflict: "user_id,key" },
-      );
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const slice = rows.slice(i, i + chunkSize);
+      await sb.from("user_state").upsert(slice, { onConflict: "user_id,key" });
     }
   } catch {
     /* payload 過大或網路錯誤 */
