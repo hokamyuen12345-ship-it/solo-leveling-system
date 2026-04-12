@@ -16,9 +16,14 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import dns from "node:dns";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
+
+if (typeof dns.setDefaultResultOrder === "function") {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -216,17 +221,19 @@ async function fetchUserStateRowsRest(userId) {
     Accept: "application/json",
     Prefer: "return=representation",
   };
-  const ms = 90_000;
+  const ms = Math.max(30_000, Number(process.env.EXPORT_RESCUE_TIMEOUT_MS || 240_000) || 240_000);
+  const maxAttempts = Math.max(1, Number(process.env.EXPORT_RESCUE_RETRIES || 5) || 5);
   let lastErr = "";
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    console.log(`讀取 user_state（REST ${attempt}/3，逾時 ${ms / 1000}s）…`);
+  console.log(`（REST 目標：${base}/rest/v1/user_state?user_id=eq… ；逾時每輪 ${ms / 1000}s，最多 ${maxAttempts} 輪；可用 EXPORT_RESCUE_TIMEOUT_MS 加長）`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`讀取 user_state（REST ${attempt}/${maxAttempts}）…`);
     try {
       const res = await fetchWithTimeout(href, { headers }, ms);
       const text = await res.text();
       if (!res.ok) {
         lastErr = `HTTP ${res.status}: ${text.slice(0, 400)}`;
         console.log(`  ${lastErr}`);
-        if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+        if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 4000));
         continue;
       }
       const rows = JSON.parse(text);
@@ -235,14 +242,21 @@ async function fetchUserStateRowsRest(userId) {
     } catch (e) {
       lastErr = e?.cause?.message || e?.message || String(e);
       console.log(`  ${lastErr}`);
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+      if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 4000));
     }
   }
-  throw new Error(`讀取 user_state 失敗（已重試 3 次）：${lastErr}`);
+  throw new Error(
+    `讀取 user_state 失敗（已重試 ${maxAttempts} 次）：${lastErr}\n\n` +
+      "網絡／VPN：若本機 IP 係 10.x 或你用緊 VPN，請**完全關閉 VPN** 改用手機熱點或屋企 Wi‑Fi 再跑。\n" +
+      "後備：喺 Supabase → SQL Editor 執行：\n" +
+      `  SELECT key, value FROM public.user_state WHERE user_id = '${userId}';\n` +
+      "將結果匯出／複製後再手動整理（或等專案恢復穩定後再跑本腳本）。",
+  );
 }
 
 async function main() {
   console.log("開始：連線 Supabase 並查 user…");
+  console.log("提示：連線反覆中斷／逾時，多數係 **VPN／公司網／DNS**；請先關 VPN，必要時改用手機熱點。");
   const userId = await resolveUserId();
   console.log(`已解析 user_id：${userId}`);
   const rows = await fetchUserStateRowsRest(userId);
