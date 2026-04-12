@@ -205,18 +205,47 @@ async function resolveUserId() {
   return arg;
 }
 
+/**
+ * 用 PostgREST REST 直接讀 user_state，唔經 supabase-js（避免 schema cache / introspection 喺 DB 唔穩時報錯）
+ */
+async function fetchUserStateRowsRest(userId) {
+  const base = url.replace(/\/$/, "");
+  const href = `${base}/rest/v1/user_state?user_id=eq.${encodeURIComponent(userId)}&select=key,value`;
+  const headers = {
+    ...adminHeaders,
+    Accept: "application/json",
+    Prefer: "return=representation",
+  };
+  const ms = 90_000;
+  let lastErr = "";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    console.log(`讀取 user_state（REST ${attempt}/3，逾時 ${ms / 1000}s）…`);
+    try {
+      const res = await fetchWithTimeout(href, { headers }, ms);
+      const text = await res.text();
+      if (!res.ok) {
+        lastErr = `HTTP ${res.status}: ${text.slice(0, 400)}`;
+        console.log(`  ${lastErr}`);
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+        continue;
+      }
+      const rows = JSON.parse(text);
+      if (!Array.isArray(rows)) throw new Error("回傳唔係陣列");
+      return rows;
+    } catch (e) {
+      lastErr = e?.cause?.message || e?.message || String(e);
+      console.log(`  ${lastErr}`);
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+    }
+  }
+  throw new Error(`讀取 user_state 失敗（已重試 3 次）：${lastErr}`);
+}
+
 async function main() {
   console.log("開始：連線 Supabase 並查 user…");
   const userId = await resolveUserId();
-  console.log(`已解析 user_id，讀取 user_state（最多等 120s）…`);
-  const stateMs = 120_000;
-  const statePromise = supabase.from("user_state").select("key,value").eq("user_id", userId);
-  const stateTimeout = new Promise((_, rej) =>
-    setTimeout(() => rej(new Error("讀取 user_state 逾時 120s。請換網絡／關 VPN 再試，或喺 Dashboard 用 SQL 匯出。")), stateMs),
-  );
-  const { data: rows, error } = await Promise.race([statePromise, stateTimeout]);
-
-  if (error) throw error;
+  console.log(`已解析 user_id：${userId}`);
+  const rows = await fetchUserStateRowsRest(userId);
 
   const byKey = new Map();
   for (const r of rows || []) {
