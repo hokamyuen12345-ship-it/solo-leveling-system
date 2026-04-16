@@ -3962,177 +3962,6 @@ export default function Home() {
                   });
                 })()}
 
-                {/* LOCAL JSON BACKUP — 本機／手機轉移，合併去重 */}
-                <div
-                  style={{
-                    marginBottom: 20,
-                    padding: 14,
-                    borderRadius: 10,
-                    border: "1px solid rgba(56,189,248,0.28)",
-                    background: "linear-gradient(135deg, rgba(8,47,73,0.45), rgba(15,23,42,0.35))",
-                  }}
-                >
-                  <div style={{ color: "#7dd3fc", fontSize: "0.62rem", letterSpacing: "0.18em", fontWeight: 800, marginBottom: 8 }}>
-                    LOCAL BACKUP · JSON
-                  </div>
-                  <div style={{ color: "#94a3b8", fontSize: "0.55rem", marginBottom: 12, lineHeight: 1.55, letterSpacing: "0.04em" }}>
-                    匯出為本機快照（<code style={{ fontSize: 10 }}>solo-leveling-backup-v1</code>
-                    ）。合併匯入：同一遊戲日會合併已完成任務 id、懲罰 id；歷史以紀錄 id 去重（保留較新
-                    <code style={{ fontSize: 10 }}>finishedAt</code>
-                    ）；成就聯集；自訂任務／Top／自訂懲罰以 id 為準（匯入覆寫同 id）。覆寫只寫入備份檔有嘅鍵，其餘本機保留。
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      sound.playClick();
-                      try {
-                        const blob = new Blob([stringifySoloLevelingBackup()], { type: "application/json" });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `solo-leveling-backup-${new Date().toISOString().slice(0, 10)}.json`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                        setSlBackupMsg("已匯出 JSON。");
-                      } catch {
-                        setSlBackupMsg("匯出失敗。");
-                      }
-                    }}
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: 8,
-                      border: "1px solid rgba(56,189,248,0.45)",
-                      background: "rgba(14,165,233,0.15)",
-                      color: "#bae6fd",
-                      fontSize: "0.58rem",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      letterSpacing: "0.1em",
-                      fontFamily: "inherit",
-                      width: "100%",
-                      marginBottom: 10,
-                    }}
-                  >
-                    匯出備份（JSON）
-                  </button>
-                  <textarea
-                    value={slBackupImportText}
-                    onChange={(e) => {
-                      setSlBackupImportText(e.target.value);
-                      setSlBackupMsg(null);
-                    }}
-                    placeholder="貼上備份 JSON…"
-                    style={{
-                      width: "100%",
-                      minHeight: 88,
-                      boxSizing: "border-box",
-                      borderRadius: 8,
-                      border: "1px solid rgba(148,163,184,0.25)",
-                      background: "rgba(0,0,0,0.35)",
-                      color: "#e2e8f0",
-                      fontSize: 11,
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                      padding: 10,
-                      resize: "vertical",
-                    }}
-                  />
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginTop: 10,
-                      color: "#94a3b8",
-                      fontSize: "0.52rem",
-                      cursor: "pointer",
-                      userSelect: "none",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={slBackupMergePrefs}
-                      onChange={(e) => setSlBackupMergePrefs(e.target.checked)}
-                      style={{ accentColor: "#38bdf8" }}
-                    />
-                    合併時一併覆寫語音開關與頭像（預設唔改，避免另一部機蓋你偏好）
-                  </label>
-                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        sound.playClick();
-                        setSlBackupMsg(null);
-                        try {
-                          const parsed = parseSoloLevelingBackup(JSON.parse(slBackupImportText.trim() || "{}"));
-                          if (!parsed) {
-                            setSlBackupMsg("格式錯誤：需要 solo-leveling-backup-v1。");
-                            return;
-                          }
-                          mergeSoloLevelingBackupIntoLocalStorage(parsed, {
-                            includeVoiceAndAvatar: slBackupMergePrefs,
-                          });
-                          setSlBackupMsg("合併完成，重新載入中…");
-                          window.setTimeout(() => window.location.reload(), 320);
-                        } catch {
-                          setSlBackupMsg("無法解析 JSON。");
-                        }
-                      }}
-                      style={{
-                        flex: 1,
-                        minWidth: 120,
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        border: "1px solid rgba(56,189,248,0.4)",
-                        background: "rgba(8,47,73,0.5)",
-                        color: "#e0f2fe",
-                        fontSize: "0.55rem",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      匯入（合併去重）
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        sound.playClick();
-                        setSlBackupMsg(null);
-                        try {
-                          const parsed = parseSoloLevelingBackup(JSON.parse(slBackupImportText.trim() || "{}"));
-                          if (!parsed) {
-                            setSlBackupMsg("格式錯誤：需要 solo-leveling-backup-v1。");
-                            return;
-                          }
-                          replaceSoloLevelingBackupIntoLocalStorage(parsed);
-                          setSlBackupMsg("已覆寫備份內鍵值，重新載入中…");
-                          window.setTimeout(() => window.location.reload(), 320);
-                        } catch {
-                          setSlBackupMsg("無法解析 JSON。");
-                        }
-                      }}
-                      style={{
-                        flex: 1,
-                        minWidth: 120,
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        border: "1px solid rgba(251,191,36,0.35)",
-                        background: "rgba(120,53,15,0.25)",
-                        color: "#fde68a",
-                        fontSize: "0.55rem",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      匯入（覆寫檔內鍵）
-                    </button>
-                  </div>
-                  {slBackupMsg ? (
-                    <p style={{ marginTop: 10, marginBottom: 0, color: "#7dd3fc", fontSize: "0.55rem" }}>{slBackupMsg}</p>
-                  ) : null}
-                </div>
-
                 {/* DANGER ZONE — penalty, warning red, danger icon */}
                 <div style={{marginBottom:"20px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"10px"}}>
@@ -4318,6 +4147,178 @@ export default function Home() {
                 </div>
               </div>
             ); })()}
+
+            {/* LOCAL JSON BACKUP — 本機／手機轉移，合併去重 */}
+            <div
+              style={{
+                marginTop: 20,
+                marginBottom: 20,
+                padding: 14,
+                borderRadius: 10,
+                border: "1px solid rgba(56,189,248,0.28)",
+                background: "linear-gradient(135deg, rgba(8,47,73,0.45), rgba(15,23,42,0.35))",
+              }}
+            >
+              <div style={{ color: "#7dd3fc", fontSize: "0.62rem", letterSpacing: "0.18em", fontWeight: 800, marginBottom: 8 }}>
+                LOCAL BACKUP · JSON
+              </div>
+              <div style={{ color: "#94a3b8", fontSize: "0.55rem", marginBottom: 12, lineHeight: 1.55, letterSpacing: "0.04em" }}>
+                匯出為本機快照（<code style={{ fontSize: 10 }}>solo-leveling-backup-v1</code>
+                ）。合併匯入：同一遊戲日會合併已完成任務 id、懲罰 id；歷史以紀錄 id 去重（保留較新
+                <code style={{ fontSize: 10 }}>finishedAt</code>
+                ）；成就聯集；自訂任務／Top／自訂懲罰以 id 為準（匯入覆寫同 id）。覆寫只寫入備份檔有嘅鍵，其餘本機保留。
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  try {
+                    const blob = new Blob([stringifySoloLevelingBackup()], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `solo-leveling-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setSlBackupMsg("已匯出 JSON。");
+                  } catch {
+                    setSlBackupMsg("匯出失敗。");
+                  }
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(56,189,248,0.45)",
+                  background: "rgba(14,165,233,0.15)",
+                  color: "#bae6fd",
+                  fontSize: "0.58rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  letterSpacing: "0.1em",
+                  fontFamily: "inherit",
+                  width: "100%",
+                  marginBottom: 10,
+                }}
+              >
+                匯出備份（JSON）
+              </button>
+              <textarea
+                value={slBackupImportText}
+                onChange={(e) => {
+                  setSlBackupImportText(e.target.value);
+                  setSlBackupMsg(null);
+                }}
+                placeholder="貼上備份 JSON…"
+                style={{
+                  width: "100%",
+                  minHeight: 88,
+                  boxSizing: "border-box",
+                  borderRadius: 8,
+                  border: "1px solid rgba(148,163,184,0.25)",
+                  background: "rgba(0,0,0,0.35)",
+                  color: "#e2e8f0",
+                  fontSize: 11,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  padding: 10,
+                  resize: "vertical",
+                }}
+              />
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 10,
+                  color: "#94a3b8",
+                  fontSize: "0.52rem",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={slBackupMergePrefs}
+                  onChange={(e) => setSlBackupMergePrefs(e.target.checked)}
+                  style={{ accentColor: "#38bdf8" }}
+                />
+                合併時一併覆寫語音開關與頭像（預設唔改，避免另一部機蓋你偏好）
+              </label>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playClick();
+                    setSlBackupMsg(null);
+                    try {
+                      const parsed = parseSoloLevelingBackup(JSON.parse(slBackupImportText.trim() || "{}"));
+                      if (!parsed) {
+                        setSlBackupMsg("格式錯誤：需要 solo-leveling-backup-v1。");
+                        return;
+                      }
+                      mergeSoloLevelingBackupIntoLocalStorage(parsed, {
+                        includeVoiceAndAvatar: slBackupMergePrefs,
+                      });
+                      setSlBackupMsg("合併完成，重新載入中…");
+                      window.setTimeout(() => window.location.reload(), 320);
+                    } catch {
+                      setSlBackupMsg("無法解析 JSON。");
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 120,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(56,189,248,0.4)",
+                    background: "rgba(8,47,73,0.5)",
+                    color: "#e0f2fe",
+                    fontSize: "0.55rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  匯入（合併去重）
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playClick();
+                    setSlBackupMsg(null);
+                    try {
+                      const parsed = parseSoloLevelingBackup(JSON.parse(slBackupImportText.trim() || "{}"));
+                      if (!parsed) {
+                        setSlBackupMsg("格式錯誤：需要 solo-leveling-backup-v1。");
+                        return;
+                      }
+                      replaceSoloLevelingBackupIntoLocalStorage(parsed);
+                      setSlBackupMsg("已覆寫備份內鍵值，重新載入中…");
+                      window.setTimeout(() => window.location.reload(), 320);
+                    } catch {
+                      setSlBackupMsg("無法解析 JSON。");
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 120,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(251,191,36,0.35)",
+                    background: "rgba(120,53,15,0.25)",
+                    color: "#fde68a",
+                    fontSize: "0.55rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  匯入（覆寫檔內鍵）
+                </button>
+              </div>
+              {slBackupMsg ? (
+                <p style={{ marginTop: 10, marginBottom: 0, color: "#7dd3fc", fontSize: "0.55rem" }}>{slBackupMsg}</p>
+              ) : null}
+            </div>
 
             {/* 任務設定視窗 */}
             {settingsPortalReady && questSettingsOpen && editingQuestId != null && typeof document !== "undefined" &&
