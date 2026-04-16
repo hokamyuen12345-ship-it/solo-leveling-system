@@ -37,6 +37,7 @@ import { fetchUserStateAndApplyToLocalStorage, pushKeysToUserState } from "@/lib
 
 const SL_HOME_FROM_IELTS = "sl_home_from_ielts_v1";
 const IELTS_ACCENT_PINK_LS = "ielts_accent_pink_v1";
+const DEVICE_LOCAL_ONLY = true;
 
 /**
  * 掛到 body：避免放在帶 transform 的 .ielts-page-panel 內時，fixed 底欄變成相對面板定位而表單被裁切／看不到。
@@ -219,6 +220,10 @@ export default function IELTSPage() {
 
   /** 登入時自雲端拉取 user_state（含 IELTS）後重新 hydrate，與主頁同步 */
   useEffect(() => {
+    if (DEVICE_LOCAL_ONLY) {
+      store.reloadFromLocalStorage();
+      return;
+    }
     const sb = getSupabase();
     if (!sb) return;
     let cancelled = false;
@@ -268,6 +273,7 @@ export default function IELTSPage() {
 
   /** 已登入時定期上傳 IELTS 相關 localStorage 鍵（主頁也會一併上傳） */
   useEffect(() => {
+    if (DEVICE_LOCAL_ONLY) return;
     if (!store.ready) return;
     const sb = getSupabase();
     if (!sb) return;
@@ -3004,17 +3010,19 @@ function RecordsPanel({
       setActiveId(id);
       try { sessionStorage.setItem("ielts_last_tab_v1", "records"); } catch {}
       // Best-effort: push records immediately so reload on another device won't lose it.
-      void (async () => {
-        try {
-          const sb = getSupabase();
-          if (!sb) return;
-          const { data: { session } } = await sb.auth.getSession();
-          if (!session?.user) return;
-          await pushKeysToUserState(session.user.id, IELTS_SYNC_KEYS);
-        } catch {
-          /* offline / payload too large: periodic push will retry */
-        }
-      })();
+      if (!DEVICE_LOCAL_ONLY) {
+        void (async () => {
+          try {
+            const sb = getSupabase();
+            if (!sb) return;
+            const { data: { session } } = await sb.auth.getSession();
+            if (!session?.user) return;
+            await pushKeysToUserState(session.user.id, IELTS_SYNC_KEYS);
+          } catch {
+            /* offline / payload too large: periodic push will retry */
+          }
+        })();
+      }
       router.push(`/ielts/records/${id}`);
     }
   };

@@ -1898,6 +1898,7 @@ function MissionTimer({ quest, rankColor, rankGlow, onComplete, onCancel, skillB
 }
 
 export default function Home() {
+  const DEVICE_LOCAL_ONLY = true;
   const [completed, setCompleted] = useState<number[]>([]);
   const [debuffs,   setDebuffs]   = useState<number[]>([]);
   const [customDebuffs, setCustomDebuffs] = useState<DebuffDef[]>([]);
@@ -1908,7 +1909,7 @@ export default function Home() {
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpRange, setLevelUpRange] = useState<{ from: number; to: number } | null>(null);
   const [loaded, setLoaded]       = useState(false);
-  const [syncStatus, setSyncStatus] = useState<"pending" | "local" | "synced">("pending");
+  const [syncStatus, setSyncStatus] = useState<"pending" | "local" | "synced">("local");
   const [user, setUser]           = useState<User | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const router = useRouter();
@@ -2341,6 +2342,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (DEVICE_LOCAL_ONLY) {
+      setAuthPortalReady(false);
+      return;
+    }
     const el = document.createElement("div");
     el.id = "auth-fixed-anchor";
     el.style.cssText = "position:fixed !important; top:0 !important; right:0 !important; left:auto !important; bottom:auto !important; z-index:9999 !important; transform:none !important; pointer-events:auto;";
@@ -2356,6 +2361,11 @@ export default function Home() {
   // Auth + cloud sync: resolve session and optionally hydrate from Supabase before init
   const hasInitializedRef = useRef(false);
   useEffect(() => {
+    if (DEVICE_LOCAL_ONLY) {
+      setUser(null);
+      setSyncStatus("local");
+      return;
+    }
     const supabase = getSupabase();
     if (!supabase) {
       setSyncStatus("local");
@@ -2554,6 +2564,7 @@ export default function Home() {
 
   // Periodic sync to Supabase when logged in (catches meta, history, boss, achievements, voice)
   useEffect(() => {
+    if (DEVICE_LOCAL_ONLY) return;
     if (!loaded || !user) return;
     const sb = getSupabase();
     if (!sb) return;
@@ -2920,7 +2931,7 @@ export default function Home() {
       <BackgroundLayers />
 
       {/* 右上角登入/登出：計時畫面時隱藏避免擋到；其餘時候釘在視窗最上方右邊 */}
-      {authPortalReady && authAnchorRef.current && !activeTimer && createPortal(
+      {!DEVICE_LOCAL_ONLY && authPortalReady && authAnchorRef.current && !activeTimer && createPortal(
         <div style={{
           display: "flex", alignItems: "center", gap: "8px", fontFamily: "var(--font-system)", fontSize: "clamp(0.65rem, 2.2vw, 0.75rem)",
           background: "rgba(0,0,0,0.45)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
