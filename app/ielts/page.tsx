@@ -2136,11 +2136,11 @@ function CardsPanel({
   const focusCategory = useCallback((id: string) => {
     if (id === FLASHCARD_REVIEW_QUEUE_FILTER_ID) return;
     if (id === "all") return;
-    if (!cats.some((c) => c.id === id)) return;
+    // 類別新增後 settings 會稍後才更新；此處允許先切換，避免仍落回預設分類。
     setFilter(id);
     setNewCat(id);
     if (editId) setEcat(id);
-  }, [cats, editId]);
+  }, [editId]);
 
   const filtered = useMemo(() => {
     if (displayFilter === "all") return store.flashcards;
@@ -2516,7 +2516,13 @@ function CardsPanel({
                     const t = newCategoryName.trim();
                     if (!t) return;
                     const id = store.addFlashcardCategory(t);
-                    if (id) focusCategory(id);
+                    if (id) {
+                      // 立即切換到新類別：確保新增字卡會落入該類別
+                      focusCategory(id);
+                      setCatLabelDrafts((d) => ({ ...d, [id]: t }));
+                      const other = cats.find((x) => x.id !== id);
+                      if (other) setDeleteMoveToId((m) => ({ ...m, [id]: other.id }));
+                    }
                     setNewCategoryName("");
                   }}
                 >
