@@ -99,6 +99,22 @@ function looksLikeWritingFlashcardCategory(c: FlashcardCategoryDef): boolean {
   return /寫作|写作|Writing|WRITING/i.test(lab);
 }
 
+function looksLikeWritingTask1FlashcardCategory(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  // Common patterns: writing_task1, task1, part1, p1, 「寫作 Task 1」
+  if (/task[\s_-]*1|part[\s_-]*1|\bp1\b/.test(id)) return true;
+  return /task\s*1|part\s*1|\bp1\b|寫作\s*task\s*1|写作\s*task\s*1/i.test(lab);
+}
+
+function looksLikeWritingTask2FlashcardCategory(c: FlashcardCategoryDef): boolean {
+  const id = c.id.toLowerCase();
+  const lab = c.label.trim();
+  // Common patterns: writing_task2, task2, part2, p2, 「寫作 Task 2」
+  if (/task[\s_-]*2|part[\s_-]*2|\bp2\b/.test(id)) return true;
+  return /task\s*2|part\s*2|\bp2\b|寫作\s*task\s*2|写作\s*task\s*2/i.test(lab);
+}
+
 function pickSpeakingCategoryId(categories: FlashcardCategoryDef[]): FlashcardCategory | null {
   const byId = categories.find((c) => c.id === "speaking");
   if (byId) return byId.id;
@@ -110,6 +126,14 @@ function pickWritingCategoryId(categories: FlashcardCategoryDef[]): FlashcardCat
   const byId = categories.find((c) => c.id === "writing");
   if (byId) return byId.id;
   const hit = categories.find(looksLikeWritingFlashcardCategory);
+  return hit?.id ?? null;
+}
+
+function pickWritingPartCategoryId(categories: FlashcardCategoryDef[], part: 1 | 2): FlashcardCategory | null {
+  const hit =
+    part === 1
+      ? categories.find(looksLikeWritingTask1FlashcardCategory)
+      : categories.find(looksLikeWritingTask2FlashcardCategory);
   return hit?.id ?? null;
 }
 
@@ -133,9 +157,14 @@ export function flashcardCategoryIdForSwRecord(
   }
 
   if (isSwRecordWriting(type)) {
+    const desiredPart: 1 | 2 = type === "writing_part1" ? 1 : 2; // `writing` 視同 Part 2
+    const directPart = pickWritingPartCategoryId(categories, desiredPart);
+    if (directPart) return directPart;
     const direct = pickWritingCategoryId(categories);
     if (direct) return direct;
     const nonRead = categories.filter((c) => !looksLikeReadingFlashcardCategory(c));
+    const fromPoolPart = pickWritingPartCategoryId(nonRead, desiredPart);
+    if (fromPoolPart) return fromPoolPart;
     const fromPool = pickWritingCategoryId(nonRead);
     if (fromPool) return fromPool;
     return (nonRead[0] ?? categories[0]).id;
@@ -873,7 +902,10 @@ export function useIELTSStore() {
     (item: Omit<Flashcard, "id" | "createdAt" | "mastered">) => {
       const cats = settings.flashcardCategories;
       const valid = new Set(cats.map((c) => c.id));
-      const category = valid.has(item.category) ? item.category : coerceFlashcardCategoryId(cats, item.category);
+      const category =
+        valid.has(item.category) || /^cat_[a-f0-9]{12}$/i.test(item.category)
+          ? item.category
+          : coerceFlashcardCategoryId(cats, item.category);
       const iso = todayIso();
       setFlashcards((prev) => [
         {

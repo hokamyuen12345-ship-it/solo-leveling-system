@@ -2112,8 +2112,12 @@ function CardsPanel({
     if (filter === "all" || cats.some((c) => c.id === filter)) return filter;
     return "all";
   }, [filter, cats]);
-  const newCatResolved = cats.some((c) => c.id === newCat) ? newCat : (cats[0]?.id ?? "vocab");
-  const ecatResolved = cats.some((c) => c.id === ecat) ? ecat : (cats[0]?.id ?? "vocab");
+  const newCatResolved = cats.some((c) => c.id === newCat) || /^cat_[a-f0-9]{12}$/i.test(newCat)
+    ? newCat
+    : (cats[0]?.id ?? "vocab");
+  const ecatResolved = cats.some((c) => c.id === ecat) || /^cat_[a-f0-9]{12}$/i.test(ecat)
+    ? ecat
+    : (cats[0]?.id ?? "vocab");
 
   const { skillsInRLWSOrder, rest: filterRestCats } = useMemo(
     () => partitionFlashcardCategoriesForFilterRow(cats),
