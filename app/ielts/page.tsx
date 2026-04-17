@@ -2133,6 +2133,15 @@ function CardsPanel({
     setCatManageOpen(true);
   };
 
+  const focusCategory = useCallback((id: string) => {
+    if (id === FLASHCARD_REVIEW_QUEUE_FILTER_ID) return;
+    if (id === "all") return;
+    if (!cats.some((c) => c.id === id)) return;
+    setFilter(id);
+    setNewCat(id);
+    if (editId) setEcat(id);
+  }, [cats, editId]);
+
   const filtered = useMemo(() => {
     if (displayFilter === "all") return store.flashcards;
     if (displayFilter === FLASHCARD_REVIEW_QUEUE_FILTER_ID) {
@@ -2506,7 +2515,8 @@ function CardsPanel({
                   onClick={() => {
                     const t = newCategoryName.trim();
                     if (!t) return;
-                    store.addFlashcardCategory(t);
+                    const id = store.addFlashcardCategory(t);
+                    if (id) focusCategory(id);
                     setNewCategoryName("");
                   }}
                 >

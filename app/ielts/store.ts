@@ -930,14 +930,15 @@ export function useIELTSStore() {
     [],
   );
 
-  const addFlashcardCategory = useCallback((label: string) => {
+  const addFlashcardCategory = useCallback((label: string): string | null => {
     const t = label.trim();
-    if (!t) return;
+    if (!t) return null;
     const id = `cat_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
     setSettings((s) => ({
       ...s,
       flashcardCategories: [...s.flashcardCategories, { id, label: t }],
     }));
+    return id;
   }, []);
 
   const renameFlashcardCategory = useCallback((id: string, label: string) => {
