@@ -15,7 +15,10 @@ export type FlashcardCategoryDef = {
 
 export const DEFAULT_FLASHCARD_CATEGORIES: FlashcardCategoryDef[] = [
   { id: "vocab", label: "詞彙" },
+  // Keep legacy "writing" (existing data), but also provide explicit Task 1/2 buckets.
   { id: "writing", label: "寫作" },
+  { id: "writing_task1", label: "寫作 Task 1" },
+  { id: "writing_task2", label: "寫作 Task 2" },
   { id: "speaking", label: "口說" },
   { id: "grammar", label: "語法" },
 ];
@@ -523,7 +526,17 @@ function parseFlashcardCategories(raw: unknown): FlashcardCategoryDef[] {
     seen.add(id);
     out.push({ id, label });
   }
-  return out.length > 0 ? out : DEFAULT_FLASHCARD_CATEGORIES.map((c) => ({ ...c }));
+  if (out.length === 0) return DEFAULT_FLASHCARD_CATEGORIES.map((c) => ({ ...c }));
+
+  // Ensure required buckets always exist (older saves only had 4 defaults).
+  const need = DEFAULT_FLASHCARD_CATEGORIES.map((c) => c.id);
+  const have = new Set(out.map((c) => c.id));
+  const merged = [...out];
+  for (const def of DEFAULT_FLASHCARD_CATEGORIES) {
+    if (!have.has(def.id)) merged.push({ ...def });
+  }
+  // Stable order: keep user's existing order first, then required defaults appended.
+  return merged;
 }
 
 export function flashcardCategoryLabel(categoryId: string, defs: FlashcardCategoryDef[]): string {

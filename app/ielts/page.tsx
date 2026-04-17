@@ -2004,7 +2004,11 @@ function looksListeningFlashcardCat(c: FlashcardCategoryDef): boolean {
 function looksWritingFlashcardCat(c: FlashcardCategoryDef): boolean {
   const id = c.id.toLowerCase();
   const lab = c.label.trim();
-  if (id === "writing" || /\bwriting\b/.test(id)) return true;
+  // Keep the RLWS "writing" slot for the generic writing bucket (not Task 1/2).
+  if (id === "writing") return true;
+  if (id.includes("task1") || id.includes("task2") || /part[\s_-]*1|part[\s_-]*2|task[\s_-]*1|task[\s_-]*2/i.test(id)) return false;
+  if (/task\s*1|task\s*2|part\s*1|part\s*2/i.test(lab)) return false;
+  if (/\bwriting\b/.test(id)) return true;
   return /寫作|写作|Writing|WRITING/i.test(lab);
 }
 
